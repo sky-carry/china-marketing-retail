@@ -70,6 +70,12 @@ _lock = threading.Lock()
 _cache = {'ts': 0.0, 'body': b'', 'etag': ''}
 
 
+def invalidate() -> None:
+    """数据入库后调用，使缓存立即失效。"""
+    with _lock:
+        _cache.update(ts=0.0, body=b'', etag='')
+
+
 def get_data() -> Tuple[str, bytes]:
     """返回 (etag, json_bytes)。60 秒内命中缓存，避免每次请求都全量查库。"""
     now = time.time()

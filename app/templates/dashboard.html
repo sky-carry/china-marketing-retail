@@ -67,6 +67,31 @@ input[type=search] { width: 200px; }
 .btn { background: var(--s1); color: #fff; border: none; border-radius: 7px;
   padding: 7px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn:hover { filter: brightness(1.08); }
+.btn2 { background: var(--page); color: var(--ink-1); border: 1px solid var(--grid); }
+/* 上传数据对话框 */
+dialog#upDlg { border: 1px solid var(--border); border-radius: 12px; padding: 0;
+  background: var(--surface-1); color: var(--ink-1); width: min(560px, 94vw); }
+dialog#upDlg::backdrop { background: rgba(0,0,0,.45); }
+.updlg-body { padding: 20px 22px 18px; font-size: 13.5px; }
+.updlg-body h3 { font-size: 15px; margin-bottom: 4px; }
+.updlg-sub { color: var(--ink-3); font-size: 12px; margin-bottom: 14px; }
+.uprow { display: flex; align-items: center; gap: 10px; padding: 9px 0;
+  border-bottom: 1px solid var(--grid); }
+.uprow:last-of-type { border-bottom: none; }
+.uprow .nm { width: 150px; flex: none; }
+.uprow .nm small { display: block; color: var(--ink-3); font-size: 11px; }
+.uprow input[type=file] { flex: 1; font-size: 12px; color: var(--ink-2); min-width: 0; }
+.uprow .btn { width: auto; padding: 6px 14px; font-size: 12.5px; flex: none; }
+.upstatus { margin-top: 12px; font-size: 12.5px; border-radius: 8px;
+  padding: 8px 12px; background: var(--page); display: none; }
+.upstatus.show { display: block; }
+.upstatus pre { white-space: pre-wrap; color: var(--ink-3); font-size: 11.5px;
+  margin-top: 6px; max-height: 130px; overflow-y: auto; }
+.upstatus .st-run { color: var(--s1); font-weight: 600; }
+.upstatus .st-ok { color: var(--good-text); font-weight: 600; }
+.upstatus .st-err { color: var(--crit); font-weight: 600; }
+.updlg-foot { display: flex; justify-content: flex-end; gap: 8px;
+  padding: 0 22px 18px; }
 .layout { display: grid; grid-template-columns: minmax(540px, 6fr) 7fr; gap: 14px; align-items: start; }
 @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -144,6 +169,7 @@ tfoot tr:hover td { background: none; }
         <select id="fFlag"></select>
         <input type="search" id="fKw" placeholder="搜索货号 / 品名…">
         <div class="sp"></div>
+        <button class="btn btn2" id="btnUpload">上传数据</button>
         <button class="btn" id="btnXlsx">下载 Excel</button>
       </div>
       <div class="layout">
@@ -169,6 +195,29 @@ tfoot tr:hover td { background: none; }
   </div>
 </div>
 <div class="tip" id="tip"></div>
+<dialog id="upDlg">
+  <div class="updlg-body">
+    <h3>上传数据（Excel）</h3>
+    <div class="updlg-sub">选择文件后点上传，服务端自动入库并刷新看板。格式须与现有导出模板一致，格式不对会被拒绝、不影响现有数据。</div>
+    <div class="uprow">
+      <div class="nm">京东门店库存<small>京东后台导出 .xlsx</small></div>
+      <input type="file" id="upFileJd" accept=".xlsx,.xls">
+      <button class="btn" data-kind="jd_inventory" data-file="upFileJd">上传</button>
+    </div>
+    <div class="uprow">
+      <div class="nm">美团门店库存<small>美团后台导出 .xlsx</small></div>
+      <input type="file" id="upFileMt" accept=".xlsx,.xls">
+      <button class="btn" data-kind="meituan_inventory" data-file="upFileMt">上传</button>
+    </div>
+    <div class="uprow">
+      <div class="nm">伯俊线下库存<small>临时通道，API 接入后弃用</small></div>
+      <input type="file" id="upFileBj" accept=".xlsx,.xls">
+      <button class="btn" data-kind="bojun" data-file="upFileBj">上传</button>
+    </div>
+    <div class="upstatus" id="upStatus"></div>
+  </div>
+  <div class="updlg-foot"><button class="btn btn2" id="upClose">关闭</button></div>
+</dialog>
 <script>
 (async () => {
 document.getElementById('sub').textContent = '数据加载中…';
@@ -439,6 +488,56 @@ if (location.protocol === 'file:') {
     a.click();
   };
 }
+
+/* ---- 上传数据 ---- */
+const upDlg = el('upDlg'), upStatus = el('upStatus');
+el('btnUpload').onclick = () => { upDlg.showModal(); pollEtl(false); };
+el('upClose').onclick = () => upDlg.close();
+let etlTimer = null, etlWasRunning = false;
+
+function showStatus(html) { upStatus.classList.add('show'); upStatus.innerHTML = html; }
+
+async function pollEtl(loop = true) {
+  let s;
+  try { s = await (await fetch('api/etl/status')).json(); } catch { return; }
+  if (s.state === 'running') {
+    etlWasRunning = true;
+    showStatus(`<span class="st-run">⏳ ${s.label} 入库中… ${s.running_seconds ?? ''}s</span><pre>${s.log || ''}</pre>`);
+    if (!etlTimer) etlTimer = setInterval(pollEtl, 2000);
+  } else {
+    if (etlTimer) { clearInterval(etlTimer); etlTimer = null; }
+    if (s.state === 'success' && etlWasRunning) {
+      showStatus(`<span class="st-ok">✓ ${s.label} 入库完成</span>，2 秒后自动刷新看板…<pre>${s.log || ''}</pre>`);
+      etlWasRunning = false;
+      setTimeout(() => location.reload(), 2000);
+    } else if (s.state === 'error') {
+      showStatus(`<span class="st-err">✕ ${s.label} 入库失败</span>（现有数据未受影响）<pre>${s.log || ''}</pre>`);
+      etlWasRunning = false;
+    }
+  }
+}
+
+upDlg.querySelectorAll('button[data-kind]').forEach(btn => {
+  btn.onclick = async () => {
+    const input = el(btn.dataset.file);
+    if (!input.files.length) { showStatus('<span class="st-err">请先选择文件</span>'); return; }
+    const fd = new FormData();
+    fd.append('kind', btn.dataset.kind);
+    fd.append('file', input.files[0]);
+    btn.disabled = true; btn.textContent = '上传中…';
+    showStatus('<span class="st-run">⏳ 文件上传中…</span>');
+    try {
+      const res = await fetch('api/upload', { method: 'POST', body: fd });
+      const j = await res.json();
+      if (!res.ok) { showStatus(`<span class="st-err">✕ ${j.error || res.status}</span>`); return; }
+      pollEtl();
+    } catch (e) {
+      showStatus(`<span class="st-err">✕ 上传失败: ${e.message}</span>`);
+    } finally {
+      btn.disabled = false; btn.textContent = '上传';
+    }
+  };
+});
 
 /* ---- 未匹配 ---- */
 el('hUnStore').textContent = `门店未匹配（共 ${fmt(DATA.unStores.length)} 家 · 飞书门店按名字对不上伯俊店仓）`;

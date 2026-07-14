@@ -49,14 +49,24 @@ uvicorn app.main:app --host 0.0.0.0 --port 8061          # 启动服务
 - 服务器组件：systemd 服务 `skg-dashboard`（uvicorn）+ Docker 容器 `skg-inventory-db`（PostgreSQL 18，仅 127.0.0.1:5439）
 - 项目目录：`/opt/skg-dashboard/`
 
-### 线上数据刷新
+### 日常数据更新（推荐：看板页面直接上传）
+
+登录看板 → 点右上角「上传数据」→ 选择 Excel 上传，服务端自动入库并刷新页面。支持：
+
+- **京东门店库存**（京东后台导出 .xlsx，格式同 excel/京东门店库存-新.xlsx）
+- **美团门店库存**（美团后台导出 .xlsx）
+- 伯俊线下库存（临时通道，伯俊 API 接入后弃用）
+
+格式校验：缺少必需列会被拒绝并自动回滚，不影响现有数据；`POST /api/upload` + `GET /api/etl/status`。
+
+低频数据（门店档案、飞书门店映射）仍走命令行：
 
 ```powershell
-# 1. 上传有变化的 Excel
-scp "excel\京东门店库存-新.xlsx" root@<服务器IP>:/opt/skg-dashboard/excel/
-# 2. 服务器入库（服务不用重启，最多 60 秒后页面自动出新数据）
-ssh root@<服务器IP> "cd /opt/skg-dashboard && PGPORT=5439 python3 etl/load_excel.py"
+scp "excel\京东门店.xls" root@<服务器IP>:/opt/skg-dashboard/excel/
+ssh root@<服务器IP> "cd /opt/skg-dashboard && PGPORT=5439 python3 etl/load_excel.py --only jd_store,feishu"
 ```
+
+`--only` 可选：bojun / jd_inventory / jd_store / meituan_store / meituan_inventory / feishu，不带则全量。
 
 ### 线上发版（代码/页面有改动时）
 

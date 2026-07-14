@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
-"""把五个 Excel + 飞书导出表格入库到 PostgreSQL inventory_check 库。
+"""把 Excel 源文件入库到 PostgreSQL inventory_check 库。
 
 用法:
-  1. (可选) 用 lark-cli 重新导出飞书《即时零售门店上翻明细》为
-     excel/_feishu_即时零售门店上翻明细.xlsx
-  2. python etl/load_excel.py
-数据表会被 DROP 后重建并重建核对视图 (sql/02_核对视图.sql)。
+  python etl/load_excel.py                     # 全量：五个 Excel + 飞书导出
+  python etl/load_excel.py --only jd_inventory # 只刷新京东门店库存（看板上传走这里）
+  python etl/load_excel.py --only meituan_inventory,bojun
+
+--only 可选值: bojun / jd_inventory / jd_store / meituan_store / meituan_inventory / feishu
+数据表 DROP 后重建；无论刷新哪张表，核对视图与 data_meta 都会重建。
+入库前做列校验：源文件缺少必需列会在动库之前报错退出，不会破坏现有数据。
 """
-import sys, io, os, re, csv
+import sys, io, os, re, csv, argparse
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 import pandas as pd
@@ -44,19 +47,6 @@ def src_any(*names):
     raise FileNotFoundError(names)
 
 
-# ---------- 1. 建库 ----------
-conn = psycopg2.connect(dbname='postgres', **PG)
-conn.autocommit = True
-cur = conn.cursor()
-cur.execute("SELECT 1 FROM pg_database WHERE datname=%s", (DB,))
-if not cur.fetchone():
-    cur.execute(f"CREATE DATABASE {DB} ENCODING 'UTF8'")
-    print(f'created database {DB}')
-else:
-    print(f'database {DB} already exists, reuse it')
-cur.close(); conn.close()
-
-# ---------- 2. 读取源数据 ----------
 def dedup_cols(cols):
     seen, out = {}, []
     for c in cols:
@@ -68,48 +58,8 @@ def dedup_cols(cols):
         out.append(c if n == 1 else f'{c}_{n}')
     return out
 
-sources = []  # (table_name, comment, dataframe)
 
-df = pd.read_excel(src('伯俊线下库存.xlsx'), sheet_name='download')
-sources.append(('bojun_offline_inventory', '伯俊线下库存（伯俊线下库存.xlsx / download）', df))
-
-df = pd.read_excel(src_any('京东门店库存-新.xlsx', '京东门店库存.xlsx'))
-sources.append(('jd_store_inventory', '京东门店库存（京东门店库存-新.xlsx，商家商品编号补全版）', df))
-
-df = pd.read_excel(src('京东门店.xls'))
-sources.append(('jd_store', '京东门店（京东门店.xls / 门店导出）', df))
-
-df = pd.read_excel(src('美团门店.xlsx'))
-sources.append(('meituan_store', '美团门店（美团门店.xlsx / Sheet0）', df))
-
-df = pd.read_excel(src('美团门店库存.xlsx'))
-# 第一行是字段说明（"门店对应的唯一ID"等），不是数据，跳过
-first = str(df.iloc[0, 0])
-if 'ID' in first or '唯一' in first:
-    df = df.iloc[1:].reset_index(drop=True)
-    print('美团门店库存: 跳过第一行字段说明行')
-sources.append(('meituan_store_inventory', '美团门店库存（美团门店库存.xlsx / 商品明细）', df))
-
-FEISHU = src('_feishu_即时零售门店上翻明细.xlsx')
-df = pd.read_excel(FEISHU, sheet_name='专卖店')
-# 三个重名"营业状态"按平台改名
-plat, new_cols = None, []
-for c in df.columns:
-    c = str(c).strip()
-    if c == '京东ID': plat = '京东'
-    if c == '美团ID': plat = '美团'
-    if c == '饿了么ID': plat = '饿了么'
-    new_cols.append(f'{plat}营业状态' if c.startswith('营业状态') and plat else c)
-df.columns = new_cols
-sources.append(('feishu_store_mapping', '即时零售门店上翻明细-专卖店（飞书文档主表：三平台门店映射）', df))
-
-df = pd.read_excel(FEISHU, sheet_name='京东网点')
-sources.append(('feishu_jd_outlet', '即时零售门店上翻明细-京东网点（飞书文档附表）', df))
-
-df = pd.read_excel(FEISHU, sheet_name='各区域对接人明细')
-sources.append(('feishu_region_contact', '即时零售门店上翻明细-各区域对接人明细（飞书文档附表）', df))
-
-# ---------- 3. 中文列名 → 英文（与 sql/01_建表.sql 保持一致） ----------
+# ---------- 中文列名 → 英文（与 sql/01_建表.sql 保持一致） ----------
 RENAME = {
  'bojun_offline_inventory': {'店仓':'store_warehouse','产品编码':'product_code','款号':'style_no','品名':'product_name',
   '标准价':'standard_price','库存数量':'stock_qty','库存金额':'stock_amount','箱内库存':'boxed_stock',
@@ -147,8 +97,74 @@ RENAME = {
   '即时零售对接人':'instant_retail_contact'},
 }
 
-# ---------- 4. 建表 + 装载 ----------
+# _blank 这类由预处理产生的列不参与"缺列"校验
+_OPTIONAL_COLS = {'_blank'}
+
+
+# ---------- 各数据源读取函数：返回 [(表名, 表注释, DataFrame), ...] ----------
+
+def load_bojun():
+    df = pd.read_excel(src('伯俊线下库存.xlsx'), sheet_name='download')
+    return [('bojun_offline_inventory', '伯俊线下库存（伯俊线下库存.xlsx / download）', df)]
+
+
+def load_jd_inventory():
+    df = pd.read_excel(src_any('京东门店库存-新.xlsx', '京东门店库存.xlsx'))
+    return [('jd_store_inventory', '京东门店库存（Excel 上传，商家商品编号补全版）', df)]
+
+
+def load_jd_store():
+    df = pd.read_excel(src('京东门店.xls'))
+    return [('jd_store', '京东门店（京东门店.xls / 门店导出）', df)]
+
+
+def load_meituan_store():
+    df = pd.read_excel(src('美团门店.xlsx'))
+    return [('meituan_store', '美团门店（美团门店.xlsx / Sheet0）', df)]
+
+
+def load_meituan_inventory():
+    df = pd.read_excel(src('美团门店库存.xlsx'))
+    # 第一行是字段说明（"门店对应的唯一ID"等），不是数据，跳过
+    first = str(df.iloc[0, 0])
+    if 'ID' in first or '唯一' in first:
+        df = df.iloc[1:].reset_index(drop=True)
+        print('美团门店库存: 跳过第一行字段说明行')
+    return [('meituan_store_inventory', '美团门店库存（Excel 上传 / 商品明细）', df)]
+
+
+def load_feishu():
+    feishu = src('_feishu_即时零售门店上翻明细.xlsx')
+    out = []
+    df = pd.read_excel(feishu, sheet_name='专卖店')
+    plat, new_cols = None, []
+    for c in df.columns:   # 三个重名"营业状态"按平台改名
+        c = str(c).strip()
+        if c == '京东ID': plat = '京东'
+        if c == '美团ID': plat = '美团'
+        if c == '饿了么ID': plat = '饿了么'
+        new_cols.append(f'{plat}营业状态' if c.startswith('营业状态') and plat else c)
+    df.columns = new_cols
+    out.append(('feishu_store_mapping', '即时零售门店上翻明细-专卖店（飞书文档主表：三平台门店映射）', df))
+    out.append(('feishu_jd_outlet', '即时零售门店上翻明细-京东网点（飞书文档附表）',
+                pd.read_excel(feishu, sheet_name='京东网点')))
+    out.append(('feishu_region_contact', '即时零售门店上翻明细-各区域对接人明细（飞书文档附表）',
+                pd.read_excel(feishu, sheet_name='各区域对接人明细')))
+    return out
+
+
+LOADERS = {
+    'bojun': load_bojun,
+    'jd_inventory': load_jd_inventory,
+    'jd_store': load_jd_store,
+    'meituan_store': load_meituan_store,
+    'meituan_inventory': load_meituan_inventory,
+    'feishu': load_feishu,
+}
+
+# ---------- 类型推断与装载 ----------
 ID_PAT = re.compile(r'(id$|_id|_code|_no$|phone|mobile|barcode|batch|sku)', re.I)
+
 
 def sql_type(colname, s):
     if ID_PAT.search(colname):
@@ -164,18 +180,25 @@ def sql_type(colname, s):
         return 'double precision'
     return 'text'
 
-conn = psycopg2.connect(dbname=DB, **PG)
-cur = conn.cursor()
 
-for table, comment, df in sources:
+def validate_columns(table, df):
+    """入库前列校验：缺少映射表里的必需列直接报错退出（此时还没动数据库）。"""
+    ren = RENAME.get(table, {})
+    missing = [zh for zh in ren if zh not in df.columns and zh not in _OPTIONAL_COLS]
+    if missing:
+        sys.exit(f'列校验失败: {table} 源文件缺少必需列 {missing}，'
+                 f'请确认上传的 Excel 格式与之前一致')
+    unknown = [c for c in df.columns if c not in ren and not c.startswith('_blank')]
+    if unknown:
+        print(f'警告 {table}: 源表出现新列 {unknown}（原样入库）')
+
+
+def load_table(cur, conn, table, comment, df):
     df = df.copy()
     df.columns = dedup_cols(df.columns)
     drop = [c for c in df.columns if c.startswith('_blank') and df[c].isna().all()]
     df = df.drop(columns=drop)
     ren = RENAME.get(table, {})
-    unknown = [c for c in df.columns if c not in ren]
-    if unknown:
-        print(f'警告 {table}: 源表出现新列 {unknown}（原样入库，注意同步 sql/01_建表.sql）')
     df.columns = [ren.get(c, c) for c in df.columns]
 
     types = {c: sql_type(c, df[c]) for c in df.columns}
@@ -215,26 +238,64 @@ for table, comment, df in sources:
     n = cur.fetchone()[0]
     conn.commit()
     print(f'{table}: {n} rows, {len(df.columns)} cols loaded')
+    return n
 
-# 美团库存数量列转数值
-cur.execute('''SELECT count(*) FROM meituan_store_inventory WHERE stock_qty IS NOT NULL AND stock_qty !~ '^-?[0-9]+$' ''')
-if cur.fetchone()[0] == 0:
-    cur.execute('''ALTER TABLE meituan_store_inventory ALTER COLUMN stock_qty TYPE bigint USING NULLIF(stock_qty,'')::bigint''')
-    conn.commit()
-    print('meituan_store_inventory.stock_qty 已转为 bigint')
 
-# 记录数据装载时间（看板"数据快照"时间即取自这里）
-cur.execute("CREATE TABLE IF NOT EXISTS data_meta (loaded_at timestamptz NOT NULL)")
-cur.execute("DELETE FROM data_meta")
-cur.execute("INSERT INTO data_meta VALUES (now())")
-conn.commit()
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--only', default='',
+                    help='逗号分隔的数据源: ' + '/'.join(LOADERS))
+    args = ap.parse_args()
+    keys = [k.strip() for k in args.only.split(',') if k.strip()] or list(LOADERS)
+    bad = [k for k in keys if k not in LOADERS]
+    if bad:
+        sys.exit(f'未知数据源 {bad}，可选: {list(LOADERS)}')
 
-# 重建视图（DROP TABLE CASCADE 会把依赖视图一并删掉）
-views_sql = os.path.join(BASE, 'sql', '02_核对视图.sql')
-if os.path.exists(views_sql):
+    # 建库（不存在时）
+    conn = psycopg2.connect(dbname='postgres', **PG)
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM pg_database WHERE datname=%s", (DB,))
+    if not cur.fetchone():
+        cur.execute(f"CREATE DATABASE {DB} ENCODING 'UTF8'")
+        print(f'created database {DB}')
+    cur.close(); conn.close()
+
+    # 先把所选数据源全部读出并通过列校验，再动数据库
+    sources = []
+    for k in keys:
+        sources.extend(LOADERS[k]())
+    for table, _, df0 in sources:
+        df = df0.copy()
+        df.columns = dedup_cols(df.columns)
+        validate_columns(table, df)
+
+    conn = psycopg2.connect(dbname=DB, **PG)
+    cur = conn.cursor()
+    for table, comment, df in sources:
+        load_table(cur, conn, table, comment, df)
+
+    # 美团库存数量列转数值
+    if any(t == 'meituan_store_inventory' for t, _, _ in sources):
+        cur.execute("""SELECT count(*) FROM meituan_store_inventory
+                       WHERE stock_qty IS NOT NULL AND stock_qty !~ '^-?[0-9]+$'""")
+        if cur.fetchone()[0] == 0:
+            cur.execute("""ALTER TABLE meituan_store_inventory
+                           ALTER COLUMN stock_qty TYPE bigint USING NULLIF(stock_qty,'')::bigint""")
+            conn.commit()
+            print('meituan_store_inventory.stock_qty 已转为 bigint')
+
+    # 记录数据装载时间 + 重建视图（DROP TABLE CASCADE 会把依赖视图一并删掉）
+    cur.execute("CREATE TABLE IF NOT EXISTS data_meta (loaded_at timestamptz NOT NULL)")
+    cur.execute("DELETE FROM data_meta")
+    cur.execute("INSERT INTO data_meta VALUES (now())")
+    views_sql = os.path.join(BASE, 'sql', '02_核对视图.sql')
     cur.execute(open(views_sql, encoding='utf-8').read())
     conn.commit()
     print('核对视图已重建 (sql/02_核对视图.sql)')
+    cur.close(); conn.close()
+    print('ALL DONE')
 
-cur.close(); conn.close()
-print('ALL DONE')
+
+if __name__ == '__main__':
+    main()

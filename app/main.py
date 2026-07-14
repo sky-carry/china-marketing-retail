@@ -14,13 +14,15 @@ import time
 import asyncio
 import urllib.parse
 
-from fastapi import FastAPI, Request, Form, Response
-from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
+from fastapi import FastAPI, Request, Form, Response, UploadFile, File
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import auth
 from .config import settings, TEMPLATE_DIR
-from .services import recon, excel
+from .services import recon, excel, etl_runner
+
+MAX_UPLOAD = 100 * 1024 * 1024   # 单文件上限 100MB
 
 app = FastAPI(title='库存核对平台', docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -102,6 +104,39 @@ async def export_xlsx(request: Request):
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'ETag': etag, 'Cache-Control': 'no-cache',
                  'Content-Disposition': f"attachment; filename*=UTF-8''{fname}"})
+
+
+# ---------- 数据上传（京东/美团 API 拿不到，每天用 Excel 更新） ----------
+
+@app.post('/api/upload')
+async def upload(request: Request, kind: str = Form(...), file: UploadFile = File(...)):
+    if not auth.is_authed(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    if kind not in etl_runner.UPLOAD_KINDS:
+        return JSONResponse({'error': f'未知数据类型 {kind}'}, status_code=400)
+    if not (file.filename or '').lower().endswith(('.xlsx', '.xls')):
+        return JSONResponse({'error': '只接受 .xlsx / .xls 文件'}, status_code=400)
+    content = await file.read()
+    if len(content) > MAX_UPLOAD:
+        return JSONResponse({'error': '文件超过 100MB 上限'}, status_code=400)
+    if len(content) < 1000:
+        return JSONResponse({'error': '文件内容异常（过小），请检查后重传'}, status_code=400)
+    if etl_runner.status()['state'] == 'running':
+        return JSONResponse({'error': '已有入库任务在执行，请稍候'}, status_code=409)
+    try:
+        await asyncio.to_thread(etl_runner.save_upload, kind, content)
+    except RuntimeError as e:
+        return JSONResponse({'error': str(e)}, status_code=409)
+    if not etl_runner.start_etl(kind):
+        return JSONResponse({'error': '已有入库任务在执行，请稍候'}, status_code=409)
+    return {'ok': True, 'kind': kind, 'size': len(content)}
+
+
+@app.get('/api/etl/status')
+async def etl_status(request: Request):
+    if not auth.is_authed(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    return etl_runner.status()
 
 
 @app.get('/healthz', response_class=PlainTextResponse)
