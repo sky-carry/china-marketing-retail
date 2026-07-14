@@ -1,0 +1,25 @@
+# 业务数据（Excel 源文件不入库，走服务器/共享盘流转）
+excel/
+*.xlsx
+*.xls
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE / 系统
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# 敏感配置 / 本地文档（含服务器地址、账号密码）
+.env
+docs/*.local.md
+
+# 本地临时
+*.log
+tmp/
+库存核对看板.html

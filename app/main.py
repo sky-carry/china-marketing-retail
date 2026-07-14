@@ -1,0 +1,109 @@
+# -*- coding: utf-8 -*-
+"""库存核对平台 · FastAPI 入口。
+
+运行:  uvicorn app.main:app --host 0.0.0.0 --port 8061
+路由:
+  GET  /             看板页面（未登录返回登录页）
+  POST /login        登录（表单 u/p）
+  GET  /logout       退出
+  GET  /api/data     核对数据 JSON（60s 缓存 + ETag + gzip）
+  GET  /export.xlsx  Excel 导出（现查现生成，跟随数据缓存）
+"""
+import os
+import time
+import asyncio
+import urllib.parse
+
+from fastapi import FastAPI, Request, Form, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
+from starlette.middleware.gzip import GZipMiddleware
+
+from . import auth
+from .config import settings, TEMPLATE_DIR
+from .services import recon, excel
+
+app = FastAPI(title='库存核对平台', docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+
+def _template(name: str) -> str:
+    with open(os.path.join(TEMPLATE_DIR, name), encoding='utf-8') as f:
+        return f.read()
+
+
+def _login_page(err: str = '') -> HTMLResponse:
+    html = _template('login.html').replace(
+        '{ERR}', f'<div class="err">{err}</div>' if err else '')
+    return HTMLResponse(html, headers={'Cache-Control': 'no-store'})
+
+
+def _not_modified(request: Request, etag: str):
+    return request.headers.get('if-none-match') == etag
+
+
+# ---------- 页面 ----------
+
+@app.get('/', response_class=HTMLResponse)
+@app.get('/index.html', response_class=HTMLResponse)
+@app.get('/dashboard', response_class=HTMLResponse)
+async def index(request: Request):
+    if not auth.is_authed(request):
+        return _login_page()
+    return HTMLResponse(_template('dashboard.html'),
+                        headers={'Cache-Control': 'no-cache'})
+
+
+@app.post('/login')
+async def login(request: Request, u: str = Form(''), p: str = Form('')):
+    if auth.verify_credentials(u, p):
+        token = auth.create_session()
+        resp = RedirectResponse('/', status_code=302)
+        resp.set_cookie(auth.COOKIE_NAME, token, max_age=settings.session_ttl,
+                        httponly=True, samesite='lax', path='/')
+        return resp
+    await asyncio.sleep(1)          # 减缓暴力尝试
+    return _login_page('账号或密码不正确')
+
+
+@app.get('/logout')
+async def logout(request: Request):
+    auth.destroy_session(request.cookies.get(auth.COOKIE_NAME))
+    resp = RedirectResponse('/', status_code=302)
+    resp.delete_cookie(auth.COOKIE_NAME, path='/')
+    return resp
+
+
+# ---------- 数据接口 ----------
+
+@app.get('/api/data')
+async def api_data(request: Request):
+    if not auth.is_authed(request):
+        return Response('{"error":"unauthorized"}', status_code=401,
+                        media_type='application/json')
+    etag, body = await asyncio.to_thread(recon.get_data)
+    if _not_modified(request, etag):
+        return Response(status_code=304, headers={'ETag': etag})
+    return Response(body, media_type='application/json; charset=utf-8',
+                    headers={'ETag': etag, 'Cache-Control': 'no-cache'})
+
+
+@app.get('/export.xlsx')
+async def export_xlsx(request: Request):
+    if not auth.is_authed(request):
+        return _login_page()
+    etag, data = await asyncio.to_thread(excel.get_xlsx)
+    etag = 'W/' + etag
+    if _not_modified(request, etag):
+        return Response(status_code=304, headers={'ETag': etag})
+    ts = time.strftime('%Y-%m-%d')
+    fname = urllib.parse.quote(f'库存核对_{ts}.xlsx')
+    return Response(
+        data,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'ETag': etag, 'Cache-Control': 'no-cache',
+                 'Content-Disposition': f"attachment; filename*=UTF-8''{fname}"})
+
+
+@app.get('/healthz', response_class=PlainTextResponse)
+async def healthz():
+    return 'ok'

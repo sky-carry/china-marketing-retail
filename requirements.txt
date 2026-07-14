@@ -1,0 +1,15 @@
+# Web 服务
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9   # 登录表单解析
+
+# 数据库
+psycopg2-binary>=2.9
+
+# ETL（Excel 入库）
+pandas>=2.0
+openpyxl>=3.1
+xlrd>=2.0
+
+# 平台 API 对接（预留）
+httpx>=0.27

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>库存核对看板</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a78d6'/%3E%3Cpath d='M14 24h14M14 32h10' stroke='%23ffffff' stroke-width='5' stroke-linecap='round' opacity='.55'/%3E%3Cpath d='M26 42l9 9 16-18' stroke='%23ffffff' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --surface-1: #fcfcfb; --page: #f9f9f7;
+  --ink-1: #0b0b0b; --ink-2: #52514e; --ink-3: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10);
+  --s1: #2a78d6; --s2: #1baf7a;
+  --crit: #d03b3b; --good-text: #006300;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-1: #1a1a19; --page: #0d0d0d;
+    --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-3: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+    --s1: #3987e5; --s2: #199e70;
+    --crit: #e66767; --good-text: #0ca30c;
+  }
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--page); color: var(--ink-1);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+.wrap { max-width: 1720px; margin: 0 auto; padding: 24px 20px 60px; }
+h1 { font-size: 20px; font-weight: 650; }
+.sub { color: var(--ink-3); font-size: 12.5px; margin: 4px 0 20px; }
+.card { background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px; margin-bottom: 16px; }
+.tile .v { font-size: 26px; font-weight: 650; letter-spacing: -.01em; }
+.tile .l { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
+.tile .d { font-size: 11.5px; color: var(--ink-3); margin-top: 1px; }
+.charts { display: grid; grid-template-columns: 1fr 1.4fr; gap: 12px; margin-bottom: 16px; }
+@media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+.chart h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 12px; }
+.hbar-row { display: grid; grid-template-columns: 170px 1fr 52px; align-items: center;
+  gap: 8px; padding: 3px 0; font-size: 12.5px; }
+.hbar-row .name { color: var(--ink-2); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; text-align: right; }
+.hbar-track { height: 16px; display: flex; align-items: center; gap: 2px; }
+.hbar { height: 12px; border-radius: 0 4px 4px 0; min-width: 2px; }
+.hbar.b1 { background: var(--s1); } .hbar.b2 { background: var(--s2); }
+.hbar-row .val { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.legend { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--ink-2); margin-bottom: 10px; }
+.sortbtn { margin-left: auto; background: var(--page); color: var(--ink-1);
+  border: 1px solid var(--grid); border-radius: 6px; padding: 3px 10px;
+  font-size: 12px; cursor: pointer; }
+.sortbtn:hover { border-color: var(--axis); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+  margin-right: 5px; vertical-align: -1px; }
+.tabs { display: flex; gap: 4px; margin-bottom: -1px; position: relative; z-index: 1; }
+.tab { padding: 8px 16px; font-size: 13.5px; color: var(--ink-2); cursor: pointer;
+  border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; }
+.tab.on { background: var(--surface-1); border-color: var(--border); color: var(--ink-1);
+  font-weight: 600; }
+.panel { border-radius: 0 10px 10px 10px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.toolbar .sp { flex: 1; }
+select, input[type=search] { background: var(--page); color: var(--ink-1);
+  border: 1px solid var(--grid); border-radius: 7px; padding: 6px 10px; font-size: 13px; }
+input[type=search] { width: 200px; }
+.btn { background: var(--s1); color: #fff; border: none; border-radius: 7px;
+  padding: 7px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn:hover { filter: brightness(1.08); }
+.layout { display: grid; grid-template-columns: minmax(540px, 6fr) 7fr; gap: 14px; align-items: start; }
+@media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--ink-3); font-weight: 500; font-size: 12px;
+  border-bottom: 1px solid var(--axis); padding: 6px 8px; white-space: nowrap;
+  user-select: none; }
+td { border-bottom: 1px solid var(--grid); padding: 6px 8px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:hover td { background: color-mix(in srgb, var(--s1) 6%, transparent); }
+tfoot td { border-top: 2px solid var(--axis); border-bottom: none;
+  font-weight: 650; color: var(--ink-1); }
+tfoot tr:hover td { background: none; }
+.null { color: var(--ink-3); }
+.pos { color: var(--crit); font-weight: 600; }
+.neg { color: var(--s1); font-weight: 600; }
+.zero { color: var(--good-text); }
+.flag { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.flag i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.pager { display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  font-size: 12.5px; color: var(--ink-2); }
+.pager button { background: var(--page); color: var(--ink-1); border: 1px solid var(--grid);
+  border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 12.5px; }
+.pager button:disabled { opacity: .4; cursor: default; }
+.tblwrap { overflow-x: auto; }
+.tip { position: fixed; pointer-events: none; background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.12); display: none; z-index: 10; }
+.tip b { display: block; margin-bottom: 2px; }
+.note { font-size: 12px; color: var(--ink-3); margin-top: 8px; }
+.help { display: inline-flex; align-items: center; justify-content: center;
+  width: 13px; height: 13px; margin-left: 4px; border-radius: 50%;
+  border: 1px solid var(--ink-3); color: var(--ink-3); font-size: 9.5px;
+  font-weight: 600; cursor: help; vertical-align: 1px; }
+/* 客户→门店 树表 */
+#tTree tbody tr { cursor: pointer; }
+#tTree .c-row td { font-weight: 600; }
+#tTree .s-row td:first-child { padding-left: 34px; font-weight: 400; color: var(--ink-2); }
+#tTree tr.sel td { background: color-mix(in srgb, var(--s1) 14%, transparent); }
+.exp { display: inline-block; width: 16px; color: var(--ink-3); font-size: 10px;
+  transition: transform .12s; }
+.c-row.open .exp { transform: rotate(90deg); }
+.name-cell { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.name-cell span.nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dtitle { font-size: 13.5px; font-weight: 600; margin-bottom: 10px; display: flex;
+  align-items: center; gap: 8px; }
+.dtitle .clr { font-size: 12px; font-weight: 400; color: var(--s1); cursor: pointer; }
+.treehead { font-size: 13.5px; font-weight: 600; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>库存核对看板 · 伯俊 vs 京东秒送 / 美团闪购</h1>
+  <div class="sub" id="sub"></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="charts">
+    <div class="card chart">
+      <h3>核对状态分布（门店 × 货号行数）</h3>
+      <div id="flagChart"></div>
+    </div>
+    <div class="card chart">
+      <h3>库存维护率 Top 15 客户<span class="help" data-tip="<b>库存维护率</b>Σ min(平台库存, 伯俊库存) ÷ Σ 伯俊库存<br>平台已翻满伯俊数算 100%，只统计双方有数且伯俊>0 的行；按京东+美团综合维护率排序取 15 家客户，右侧按钮切换升/降序">?</span></h3>
+      <div class="legend"><span><i style="background:var(--s1)"></i>京东维护率</span>
+        <span><i style="background:var(--s2)"></i>美团维护率</span>
+        <button class="sortbtn" id="rateSort"></button></div>
+      <div id="custChart"></div>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="card panel">
+    <div id="p-main">
+      <div class="toolbar">
+        <select id="fFlag"></select>
+        <input type="search" id="fKw" placeholder="搜索货号 / 品名…">
+        <div class="sp"></div>
+        <button class="btn" id="btnXlsx">下载 Excel</button>
+      </div>
+      <div class="layout">
+        <div>
+          <div class="treehead">客户 / 门店（点击行联动右侧明细，▶ 展开门店）</div>
+          <div class="tblwrap"><table id="tTree"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+          <div class="note">差异 = Σ(平台库存 − 伯俊库存)；维护率 = Σmin(平台, 伯俊) ÷ Σ伯俊，超翻不掩盖缺翻。</div>
+        </div>
+        <div>
+          <div class="dtitle" id="dTitle"></div>
+          <div class="tblwrap"><table id="tDetail"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+          <div class="pager" id="pager"></div>
+          <div class="note">差异 = 平台库存 − 伯俊库存；「—」= 该平台未上架（与库存 0 区分）。品名悬浮可看归属客户/门店与核对状态。点击表头排序。</div>
+        </div>
+      </div>
+    </div>
+    <div id="p-unmatched" hidden>
+      <h3 style="font-size:13.5px;margin-bottom:8px" id="hUnStore"></h3>
+      <div class="tblwrap"><table id="tUnStore"><thead></thead><tbody></tbody></table></div>
+      <h3 style="font-size:13.5px;margin:18px 0 8px" id="hUnProd"></h3>
+      <div class="tblwrap"><table id="tUnProd"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(async () => {
+document.getElementById('sub').textContent = '数据加载中…';
+let DATA;
+try {
+  const res = await fetch('api/data');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  DATA = await res.json();
+} catch (e) {
+  document.getElementById('sub').textContent =
+    '数据加载失败（' + e.message + '）——请确认已登录且服务端数据库可用，刷新重试。';
+  return;
+}
+const FLAGS = DATA.meta.flags;
+const FLAG_COLOR = ['var(--crit)','var(--crit)','var(--ink-3)','var(--ink-3)','var(--ink-3)','var(--good-text)'];
+const fmt = n => n === null || n === undefined ? '—' : n.toLocaleString('zh-CN');
+const pct = (a, b) => b ? (100 * a / b).toFixed(1) + '%' : '—';
+const rateCls = s => s === '—' ? 'null' : parseFloat(s) >= 50 ? 'zero' : 'pos';
+const el = id => document.getElementById(id);
+
+/* ---- 从明细聚合出客户/门店层级 ----
+   detail 行: [0]客户 [1]门店 [2]货号 [3]品名 [4]伯俊 [5]京东 [6]美团 [7]京差 [8]美差 [9]flag */
+function blankAgg(name) {
+  return { name, rows: 0, diff: 0, match: 0, checkable: 0, jdMis: 0, mtMis: 0,
+           jdDiffSum: 0, mtDiffSum: 0,
+           jdNum: 0, jdDen: 0, mtNum: 0, mtDen: 0 };
+}
+function feed(a, r) {
+  a.rows++;
+  if (r[9] === 0) a.diff++;
+  if (r[9] === 5) a.match++;
+  if (r[5] !== null || r[6] !== null) a.checkable++;
+  if (r[7] !== null && r[7] !== 0) a.jdMis++;
+  if (r[8] !== null && r[8] !== 0) a.mtMis++;
+  // 差异求和只累计有核对意义的行：伯俊有记录、且非平台虚拟库存（9999 类占位）
+  if (r[4] !== null && r[9] !== 4) {
+    a.jdDiffSum += r[7] ?? 0;
+    a.mtDiffSum += r[8] ?? 0;
+  }
+  // 维护率分子/分母：Σ min(平台, 伯俊) / Σ 伯俊，仅统计双方有数且伯俊>0 的行
+  if (r[4] !== null && r[4] > 0) {
+    if (r[5] !== null) { a.jdNum += Math.min(r[5], r[4]); a.jdDen += r[4]; }
+    if (r[6] !== null) { a.mtNum += Math.min(r[6], r[4]); a.mtDen += r[4]; }
+  }
+}
+// 汇总维护率：Σmin(平台,伯俊) ÷ Σ伯俊，超发不掩盖缺翻
+const aggRate = (num, den) => den > 0 ? Math.min(100, Math.round(1000 * num / den) / 10) : null;
+
+const custMap = new Map();
+for (const r of DATA.detail) {
+  let c = custMap.get(r[0]);
+  if (!c) custMap.set(r[0], c = Object.assign(blankAgg(r[0]), { stores: new Map() }));
+  feed(c, r);
+  let s = c.stores.get(r[1]);
+  if (!s) c.stores.set(r[1], s = blankAgg(r[1]));
+  feed(s, r);
+}
+const byAbsDiff = (a, b) =>
+  (Math.abs(b.jdDiffSum) + Math.abs(b.mtDiffSum)) - (Math.abs(a.jdDiffSum) + Math.abs(a.mtDiffSum));
+const custs = [...custMap.values()].sort(byAbsDiff);
+custs.forEach(c => c.storeList = [...c.stores.values()].sort(byAbsDiff));
+
+const storeCnt = custs.reduce((n, c) => n + c.storeList.length, 0);
+el('sub').textContent = `数据快照 ${DATA.meta.generated_at} · 明细 ${fmt(DATA.detail.length)} 行 · ` +
+  `${custs.length} 家客户 · ${storeCnt} 家在营门店（已排除闭店/机场店 ${DATA.meta.inactive} 家）· 口径见《库存核对需求.md》`;
+
+/* ---- 指标卡 ---- */
+const flagCnt = FLAGS.map((_, i) => DATA.detail.filter(r => r[9] === i).length);
+const tiles = [
+  ['客户数', custs.length, '飞书主档内的公司'],
+  ['门店数', storeCnt, '在营且有核对数据的'],
+  ['明细行数', DATA.detail.length, '门店 × 货号'],
+  ['存在差异', flagCnt[0], '核对重点', 'var(--crit)'],
+  ['三方一致', flagCnt[5], '', 'var(--good-text)'],
+  ['伯俊负库存', flagCnt[1], '账面异常'],
+  ['未匹配门店', DATA.unStores.length, '在营但对不上伯俊'],
+  ['未匹配商品', DATA.unProducts.length, '编码对不上货号'],
+];
+el('tiles').innerHTML = tiles.map(t =>
+  `<div class="card tile"><div class="v"${t[3]?` style="color:${t[3]}"`:''}>${fmt(t[1])}</div>
+   <div class="l">${t[0]}</div><div class="d">${t[2]||''}</div></div>`).join('');
+
+/* ---- 图1: 状态分布 ---- */
+const maxFlag = Math.max(...flagCnt);
+el('flagChart').innerHTML = FLAGS.map((f, i) =>
+  `<div class="hbar-row" data-tip="<b>${f}</b>${fmt(flagCnt[i])} 行">
+     <div class="name">${f}</div>
+     <div class="hbar-track"><div class="hbar b1" style="width:${Math.max(1.5, flagCnt[i]/maxFlag*100)}%"></div></div>
+     <div class="val">${fmt(flagCnt[i])}</div></div>`).join('');
+
+/* ---- 图2: 库存维护率 Top15 客户（默认升序=最差在前，按钮切换升/降序） ---- */
+const rateOf = (num, den) => den > 0 ? Math.round(1000 * num / den) / 10 : null;
+const custRates = custs.map(c => ({
+  name: c.name, storeN: c.storeList.length, rows: c.rows,
+  jdRate: rateOf(c.jdNum, c.jdDen), mtRate: rateOf(c.mtNum, c.mtDen),
+  allRate: rateOf(c.jdNum + c.mtNum, c.jdDen + c.mtDen),
+})).filter(c => c.allRate !== null);
+let rateAsc = true;
+function renderCustChart() {
+  const topCusts = [...custRates]
+    .sort((a,b) => rateAsc ? a.allRate - b.allRate : b.allRate - a.allRate).slice(0, 15);
+  el('custChart').innerHTML = topCusts.map(c =>
+    `<div class="hbar-row" data-tip="<b>${c.name}</b>京东维护率 ${c.jdRate===null?'—':c.jdRate+'%'} · 美团维护率 ${c.mtRate===null?'—':c.mtRate+'%'}<br>综合 ${c.allRate}% · ${fmt(c.storeN)} 家门店 · ${fmt(c.rows)} 行明细">
+       <div class="name" title="${c.name}">${c.name}</div>
+       <div class="hbar-track">
+         <div class="hbar b1" style="width:${(c.jdRate??0)/2}%"></div>
+         <div class="hbar b2" style="width:${(c.mtRate??0)/2}%"></div>
+       </div>
+       <div class="val">${c.allRate}%</div></div>`).join('');
+  el('rateSort').textContent = rateAsc ? '升序 ↑ 最差在前' : '降序 ↓ 最好在前';
+}
+el('rateSort').onclick = () => { rateAsc = !rateAsc; renderCustChart(); };
+renderCustChart();
+
+/* ---- tooltip ---- */
+const tip = el('tip');
+document.addEventListener('mousemove', e => {
+  const row = e.target.closest('[data-tip]');
+  if (row) {
+    tip.innerHTML = row.dataset.tip; tip.style.display = 'block';
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + 'px';
+    tip.style.top = Math.min(e.clientY + 14, innerHeight - tip.offsetHeight - 8) + 'px';
+  } else tip.style.display = 'none';
+});
+
+/* ---- tabs ---- */
+const TABS = [['main','客户 / 门店核对'],['unmatched','未匹配清单']];
+el('tabs').innerHTML = TABS.map(([k,n],i) =>
+  `<div class="tab${i?'':' on'}" data-k="${k}">${n}</div>`).join('');
+el('tabs').onclick = e => {
+  const t = e.target.closest('.tab'); if (!t) return;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
+  TABS.forEach(([k]) => el('p-' + k).hidden = k !== t.dataset.k);
+};
+
+/* ---- 左侧：客户→门店树表 ---- */
+const TCOLS = [
+  ['客户 / 门店', '一级为客户（公司），▶ 展开显示旗下在营门店'],
+  ['门店', '该客户旗下参与核对的在营门店数'],
+  ['京东差异', 'Σ(京东库存 − 伯俊库存)<br>只累计伯俊有记录、且非虚拟库存（9999 类占位）的行<br>正数 = 京东整体多翻，负数 = 整体少翻'],
+  ['京东维护率', 'Σmin(京东, 伯俊) ÷ Σ伯俊（伯俊 > 0 且京东已上翻的行）<br>100% = 每个品的京东库存都不低于伯俊；超翻不会掩盖缺翻'],
+  ['美团差异', 'Σ(美团库存 − 伯俊库存)<br>只累计伯俊有记录、且非虚拟库存（9999 类占位）的行<br>正数 = 美团整体多翻，负数 = 整体少翻'],
+  ['美团维护率', 'Σmin(美团, 伯俊) ÷ Σ伯俊（伯俊 > 0 且美团已上翻的行）<br>100% = 每个品的美团库存都不低于伯俊；超翻不会掩盖缺翻'],
+];
+el('tTree').tHead.innerHTML = '<tr>' + TCOLS.map((c,i) =>
+  `<th class="${i?'num':''}">${c[0]}<span class="help" data-tip="<b>${c[0]}</b>${c[1]}">?</span></th>`).join('') + '</tr>';
+const aggCells = a =>
+  diffCell(a.jdDiffSum) + rateCell(aggRate(a.jdNum, a.jdDen)) +
+  diffCell(a.mtDiffSum) + rateCell(aggRate(a.mtNum, a.mtDen));
+el('tTree').tBodies[0].innerHTML = custs.map((c, ci) =>
+  `<tr class="c-row" data-c="${ci}">
+     <td><span class="name-cell"><span class="exp">▶</span><span class="nm" title="${c.name}">${c.name}</span></span></td>
+     <td class="num">${fmt(c.storeList.length)}</td>
+     ${aggCells(c)}</tr>` +
+  c.storeList.map((s, si) =>
+  `<tr class="s-row" data-c="${ci}" data-s="${si}" hidden>
+     <td><span class="name-cell"><span class="nm" title="${s.name}">${s.name}</span></span></td>
+     <td class="num"></td>
+     ${aggCells(s)}</tr>`).join('')
+).join('');
+const tot = custs.reduce((a, c) => (feedTot(a, c), a), blankAgg(''));
+function feedTot(a, c) {
+  a.jdDiffSum += c.jdDiffSum; a.mtDiffSum += c.mtDiffSum;
+  a.jdNum += c.jdNum; a.jdDen += c.jdDen; a.mtNum += c.mtNum; a.mtDen += c.mtDen;
+}
+el('tTree').tFoot.innerHTML = `<tr>
+  <td>合计（${fmt(custs.length)} 家客户）</td>
+  <td class="num">${fmt(storeCnt)}</td>
+  ${aggCells(tot)}</tr>`;
+
+let sel = { c: null, s: null };   // 当前选中：客户索引 / 门店索引
+el('tTree').tBodies[0].onclick = e => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  const ci = +tr.dataset.c;
+  if (e.target.closest('.exp')) {                       // 展开 / 收起
+    const open = tr.classList.toggle('open');
+    document.querySelectorAll(`#tTree .s-row[data-c="${ci}"]`).forEach(x => x.hidden = !open);
+    return;
+  }
+  const isStore = tr.classList.contains('s-row');
+  const nc = ci, ns = isStore ? +tr.dataset.s : null;
+  if (sel.c === nc && sel.s === ns) { sel = { c: null, s: null }; }   // 再点一次取消选择
+  else sel = { c: nc, s: ns };
+  document.querySelectorAll('#tTree tbody tr').forEach(x => x.classList.remove('sel'));
+  if (sel.c !== null) tr.classList.add('sel');
+  page = 0; renderDetail();
+};
+
+/* ---- 右侧：核对明细 ---- */
+el('fFlag').innerHTML = '<option value="">全部状态</option>' +
+  FLAGS.map((f,i) => `<option value="${i}">${f}</option>`).join('');
+el('fFlag').value = '0';   // 默认聚焦「存在差异」
+
+let page = 0, sortCol = 5, sortDir = -1;
+const PAGE = 50;
+// 显示列 → detail 数据索引
+const DCOLS = [['货号',2],['品名',3],['伯俊',4],['京东',5],['美团',6],
+               ['京东差异',7],['美团差异',8]];
+
+function diffCell(v) {
+  if (v === null) return '<td class="num null">—</td>';
+  const cls = v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero';
+  return `<td class="num ${cls}">${v > 0 ? '+' + fmt(v) : fmt(v)}</td>`;
+}
+function rateCell(v) {
+  if (v === null) return '<td class="num null">—</td>';
+  return `<td class="num ${v >= 100 ? 'zero' : 'pos'}">${v >= 100 ? '100%' : v.toFixed(1) + '%'}</td>`;
+}
+function renderDetail() {
+  const fl = el('fFlag').value, kw = el('fKw').value.trim().toLowerCase();
+  const cu = sel.c === null ? null : custs[sel.c].name;
+  const st = sel.s === null ? null : custs[sel.c].storeList[sel.s].name;
+  let rows = DATA.detail.filter(r =>
+    (!cu || r[0] === cu) && (!st || r[1] === st) &&
+    (fl === '' || r[9] === +fl) &&
+    (!kw || (r[2]||'').toLowerCase().includes(kw) || (r[3]||'').toLowerCase().includes(kw)));
+  const di = DCOLS[sortCol][1];
+  rows.sort((a,b) => {
+    const x = a[di], y = b[di];
+    if (x === null) return 1; if (y === null) return -1;
+    return (typeof x === 'string' ? x.localeCompare(y,'zh') : x - y) * sortDir;
+  });
+  el('dTitle').innerHTML = (st ? `${cu} · ${st}` : cu ? `${cu}（全部门店）` : '全部客户') +
+    (sel.c !== null ? ' <span class="clr" id="clrSel">✕ 清除选择</span>' : '');
+  const c = el('clrSel');
+  if (c) c.onclick = () => { sel = { c: null, s: null };
+    document.querySelectorAll('#tTree tbody tr').forEach(x => x.classList.remove('sel'));
+    page = 0; renderDetail(); };
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  page = Math.min(page, pages - 1);
+  const slice = rows.slice(page*PAGE, page*PAGE + PAGE);
+  el('tDetail').tHead.innerHTML = '<tr>' + DCOLS.map((c,i) =>
+    `<th class="${i>=2?'num':''}" data-i="${i}" style="cursor:pointer">${c[0]}${sortCol===i?(sortDir<0?' ↓':' ↑'):''}</th>`).join('') + '</tr>';
+  el('tDetail').tBodies[0].innerHTML = slice.map(r => `<tr>
+    <td>${r[2]||''}</td><td title="${r[0]} · ${r[1]} · ${FLAGS[r[9]]}">${r[3]||''}</td>
+    <td class="num">${r[4]===null?'<span class=null>—</span>':fmt(r[4])}</td>
+    <td class="num">${r[5]===null?'<span class=null>—</span>':fmt(r[5])}</td>
+    <td class="num">${r[6]===null?'<span class=null>—</span>':fmt(r[6])}</td>
+    ${diffCell(r[7])}${diffCell(r[8])}</tr>`).join('');
+  const sum = i => rows.reduce((a, r) => a + (r[i] ?? 0), 0);
+  el('tDetail').tFoot.innerHTML = `<tr>
+    <td colspan="2">合计（当前筛选 ${fmt(rows.length)} 行）</td>
+    <td class="num">${fmt(sum(4))}</td><td class="num">${fmt(sum(5))}</td><td class="num">${fmt(sum(6))}</td>
+    ${diffCell(sum(7))}${diffCell(sum(8))}</tr>`;
+  el('pager').innerHTML = `<button id="pv" ${page?'':'disabled'}>上一页</button>
+    <span>第 ${page+1} / ${pages} 页 · 共 ${fmt(rows.length)} 行</span>
+    <button id="nx" ${page<pages-1?'':'disabled'}>下一页</button>`;
+  el('pv').onclick = () => { page--; renderDetail(); };
+  el('nx').onclick = () => { page++; renderDetail(); };
+}
+el('tDetail').tHead.onclick = e => {
+  const th = e.target.closest('th'); if (!th) return;
+  const i = +th.dataset.i;
+  if (sortCol === i) sortDir *= -1; else { sortCol = i; sortDir = i >= 2 ? -1 : 1; }
+  renderDetail();
+};
+['fFlag','fKw'].forEach(id => el(id).oninput = () => { page = 0; renderDetail(); });
+renderDetail();
+
+/* ---- 下载 Excel（走服务端 /export.xlsx，不再内嵌页面，页面瘦身 ~40%） ---- */
+if (location.protocol === 'file:') {
+  el('btnXlsx').style.display = 'none';   // 本地双击打开时无服务端，隐藏下载
+} else {
+  el('btnXlsx').onclick = () => {
+    const a = document.createElement('a');
+    a.href = 'export.xlsx';
+    a.download = `库存核对_${DATA.meta.generated_at.replace(/[ :]/g, '-')}.xlsx`;
+    a.click();
+  };
+}
+
+/* ---- 未匹配 ---- */
+el('hUnStore').textContent = `门店未匹配（共 ${fmt(DATA.unStores.length)} 家 · 飞书门店按名字对不上伯俊店仓）`;
+el('tUnStore').innerHTML = '<thead><tr><th>门店名称</th><th>伯俊店仓名（待修正，默认=门店名）</th><th>省份</th><th>城市</th><th>京东ID</th><th>美团ID</th></tr></thead><tbody>' +
+  DATA.unStores.map(r => '<tr>' + r.map(v => `<td>${v??'<span class=null>—</span>'}</td>`).join('') + '</tr>').join('') + '</tbody>';
+const upJd = DATA.unProducts.filter(r => r[0] === '京东').length;
+el('hUnProd').textContent = `商品未匹配（共 ${fmt(DATA.unProducts.length)} 个编码：京东 ${fmt(upJd)}、美团 ${fmt(DATA.unProducts.length - upJd)} · 平台编码对不上伯俊货号）`;
+el('tUnProd').innerHTML = '<thead><tr><th>平台</th><th>平台编码</th><th>商品名称</th><th>条码</th><th class=num>涉及门店</th><th class=num>库存合计</th></tr></thead><tbody>' +
+  DATA.unProducts.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]||''}</td>
+    <td>${r[3]??'<span class=null>—</span>'}</td><td class=num>${fmt(r[4])}</td><td class=num>${fmt(r[5])}</td></tr>`).join('') + '</tbody>' +
+  `<tfoot><tr><td colspan="4">合计（${fmt(DATA.unProducts.length)} 个编码）</td>
+    <td class="num"></td>
+    <td class="num">${fmt(DATA.unProducts.reduce((a,r) => a + (r[5] ?? 0), 0))}</td></tr></tfoot>`;
+})();
+</script>
+</body>
+</html>
