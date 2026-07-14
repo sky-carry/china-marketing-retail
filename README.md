@@ -75,7 +75,8 @@ docker ps | grep skg-inventory-db           # 数据库容器
 
 ## Roadmap
 
-- [ ] 平台 API 接入（`app/platforms/`）：京东秒送、美团闪购、伯俊 ERP，替代手工 Excel 导出
+- [x] 伯俊 ERP 接口客户端（`app/platforms/bojun.py`，签名/翻页/字段映射已按文档实现并连通测试环境）+ 同步脚本 `etl/sync_bojun.py`（API 拉库存重建伯俊表，替代 Excel；带 `--store` / `--dry-run`）。**待伯俊提供生产地址与 appkey/secret 后即可切换**（填入 `.env`）
+- [ ] 平台 API 接入：京东秒送、美团闪购（`app/platforms/` 骨架已就位）
 - [ ] 商品主数据（货号 ↔ 条码）：解决剩余 20 个京东编码无法匹配
 - [ ] 门店别名维护页面（目前直接往 `store_alias` 表插行）
 - [ ] Nginx + HTTPS（当前 HTTP 明文，见下方安全提示）
