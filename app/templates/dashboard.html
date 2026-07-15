@@ -27,6 +27,12 @@ body { background: var(--page); color: var(--ink-1);
   font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
 .wrap { max-width: 1720px; margin: 0 auto; padding: 24px 20px 60px; }
 h1 { font-size: 20px; font-weight: 650; }
+.hdr { display: flex; align-items: center; gap: 12px; }
+.hdr h1 { flex: 1; min-width: 0; }
+.logout { flex: none; color: var(--ink-2); font-size: 12.5px; text-decoration: none;
+  border: 1px solid var(--grid); border-radius: 7px; padding: 5px 12px;
+  background: var(--surface-1); }
+.logout:hover { color: var(--crit); border-color: var(--crit); }
 .sub { color: var(--ink-3); font-size: 12.5px; margin: 4px 0 20px; }
 .card { background: var(--surface-1); border: 1px solid var(--border);
   border-radius: 10px; padding: 16px 18px; }
@@ -172,7 +178,10 @@ tfoot tr:hover td { background: none; }
 </head>
 <body>
 <div class="wrap">
-  <h1>库存核对看板 · 伯俊 vs 京东秒送 / 美团闪购</h1>
+  <div class="hdr">
+    <h1>库存核对看板 · 伯俊 vs 京东秒送 / 美团闪购</h1>
+    <a class="logout" href="logout" title="退出后需重新输入账号密码">⎋ 退出登录</a>
+  </div>
   <div class="sub" id="sub"></div>
 
   <div class="tiles" id="tiles"></div>
