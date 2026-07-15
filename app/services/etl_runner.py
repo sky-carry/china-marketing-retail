@@ -23,6 +23,45 @@ UPLOAD_KINDS = {
     'bojun': ('伯俊线下库存.xlsx', 'bojun', '伯俊线下库存（临时，API 接入后弃用）'),
 }
 
+# kind -> (入库表名, 模板 sheet 名)。表头取自 load_excel.RENAME，与列校验同源
+_TEMPLATE_META = {
+    'jd_inventory': ('jd_store_inventory', 'Sheet1'),
+    'meituan_inventory': ('meituan_store_inventory', 'Sheet1'),
+    'bojun': ('bojun_offline_inventory', 'download'),   # 伯俊 loader 只认 download 这个 sheet 名
+}
+
+
+def _load_etl_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'etl_load_excel', os.path.join(BASE_DIR, 'etl', 'load_excel.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)          # 顶层只有常量与函数定义，无副作用
+    return mod
+
+
+def build_template(kind: str) -> bytes:
+    """生成上传模板：表头 = 入库列校验要求的中文列（与 RENAME 同源），首行加粗冻结。"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    table, sheet_name = _TEMPLATE_META[kind]
+    headers = [zh for zh in _load_etl_module().RENAME[table] if zh != '_blank']
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill('solid', fgColor='DDEBF7')
+    ws.freeze_panes = 'A2'
+    for i, h in enumerate(headers, 1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = \
+            max(12, len(str(h)) * 2 + 4)
+    import io
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
 _lock = threading.Lock()
 _state = {
     'state': 'idle',          # idle | running | success | error

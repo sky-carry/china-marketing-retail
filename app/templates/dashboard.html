@@ -80,6 +80,8 @@ dialog#upDlg::backdrop { background: rgba(0,0,0,.45); }
 .uprow:last-of-type { border-bottom: none; }
 .uprow .nm { width: 150px; flex: none; }
 .uprow .nm small { display: block; color: var(--ink-3); font-size: 11px; }
+.uprow .tpl { color: var(--s1); text-decoration: none; }
+.uprow .tpl:hover { text-decoration: underline; }
 .uprow input[type=file] { flex: 1; font-size: 12px; color: var(--ink-2); min-width: 0; }
 .uprow .btn { width: auto; padding: 6px 14px; font-size: 12.5px; flex: none; }
 .upstatus { margin-top: 12px; font-size: 12.5px; border-radius: 8px;
@@ -200,17 +202,17 @@ tfoot tr:hover td { background: none; }
     <h3>上传数据（Excel）</h3>
     <div class="updlg-sub">选择文件后点上传，服务端自动入库并刷新看板。格式须与现有导出模板一致，格式不对会被拒绝、不影响现有数据。</div>
     <div class="uprow">
-      <div class="nm">京东门店库存<small>京东后台导出 .xlsx</small></div>
+      <div class="nm">京东门店库存<small>京东后台导出 .xlsx · <a class="tpl" href="api/template/jd_inventory">下载模板</a></small></div>
       <input type="file" id="upFileJd" accept=".xlsx,.xls">
       <button class="btn" data-kind="jd_inventory" data-file="upFileJd">上传</button>
     </div>
     <div class="uprow">
-      <div class="nm">美团门店库存<small>美团后台导出 .xlsx</small></div>
+      <div class="nm">美团门店库存<small>美团后台导出 .xlsx · <a class="tpl" href="api/template/meituan_inventory">下载模板</a></small></div>
       <input type="file" id="upFileMt" accept=".xlsx,.xls">
       <button class="btn" data-kind="meituan_inventory" data-file="upFileMt">上传</button>
     </div>
     <div class="uprow">
-      <div class="nm">伯俊线下库存<small>临时通道，API 接入后弃用</small></div>
+      <div class="nm">伯俊线下库存<small>临时通道，API 接入后弃用 · <a class="tpl" href="api/template/bojun">下载模板</a></small></div>
       <input type="file" id="upFileBj" accept=".xlsx,.xls">
       <button class="btn" data-kind="bojun" data-file="upFileBj">上传</button>
     </div>

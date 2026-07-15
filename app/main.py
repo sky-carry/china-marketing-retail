@@ -139,6 +139,21 @@ async def etl_status(request: Request):
     return etl_runner.status()
 
 
+@app.get('/api/template/{kind}')
+async def upload_template(request: Request, kind: str):
+    if not auth.is_authed(request):
+        return _login_page()
+    if kind not in etl_runner.UPLOAD_KINDS:
+        return JSONResponse({'error': f'未知数据类型 {kind}'}, status_code=404)
+    data = await asyncio.to_thread(etl_runner.build_template, kind)
+    label = etl_runner.UPLOAD_KINDS[kind][2].split('（')[0]
+    fname = urllib.parse.quote(f'{label}-上传模板.xlsx')
+    return Response(
+        data,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{fname}"})
+
+
 @app.get('/healthz', response_class=PlainTextResponse)
 async def healthz():
     return 'ok'

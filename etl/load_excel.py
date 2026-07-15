@@ -126,10 +126,11 @@ def load_meituan_store():
 def load_meituan_inventory():
     df = pd.read_excel(src('美团门店库存.xlsx'))
     # 第一行是字段说明（"门店对应的唯一ID"等），不是数据，跳过
-    first = str(df.iloc[0, 0])
-    if 'ID' in first or '唯一' in first:
-        df = df.iloc[1:].reset_index(drop=True)
-        print('美团门店库存: 跳过第一行字段说明行')
+    if len(df):
+        first = str(df.iloc[0, 0])
+        if 'ID' in first or '唯一' in first:
+            df = df.iloc[1:].reset_index(drop=True)
+            print('美团门店库存: 跳过第一行字段说明行')
     return [('meituan_store_inventory', '美团门店库存（Excel 上传 / 商品明细）', df)]
 
 
@@ -182,12 +183,15 @@ def sql_type(colname, s):
 
 
 def validate_columns(table, df):
-    """入库前列校验：缺少映射表里的必需列直接报错退出（此时还没动数据库）。"""
+    """入库前校验：缺必需列或没有数据行都直接报错退出（此时还没动数据库）。"""
     ren = RENAME.get(table, {})
     missing = [zh for zh in ren if zh not in df.columns and zh not in _OPTIONAL_COLS]
     if missing:
         sys.exit(f'列校验失败: {table} 源文件缺少必需列 {missing}，'
                  f'请确认上传的 Excel 格式与之前一致')
+    if len(df) == 0:
+        sys.exit(f'数据校验失败: {table} 源文件没有数据行（只有表头），'
+                 f'请填入数据后再上传，现有数据未受影响')
     unknown = [c for c in df.columns if c not in ren and not c.startswith('_blank')]
     if unknown:
         print(f'警告 {table}: 源表出现新列 {unknown}（原样入库）')
@@ -275,15 +279,19 @@ def main():
     for table, comment, df in sources:
         load_table(cur, conn, table, comment, df)
 
-    # 美团库存数量列转数值
+    # 美团库存数量列转数值（仅当被推断为 text 时；行数少时可能直接就是 bigint）
     if any(t == 'meituan_store_inventory' for t, _, _ in sources):
-        cur.execute("""SELECT count(*) FROM meituan_store_inventory
-                       WHERE stock_qty IS NOT NULL AND stock_qty !~ '^-?[0-9]+$'""")
-        if cur.fetchone()[0] == 0:
-            cur.execute("""ALTER TABLE meituan_store_inventory
-                           ALTER COLUMN stock_qty TYPE bigint USING NULLIF(stock_qty,'')::bigint""")
-            conn.commit()
-            print('meituan_store_inventory.stock_qty 已转为 bigint')
+        cur.execute("""SELECT data_type FROM information_schema.columns
+                       WHERE table_name='meituan_store_inventory' AND column_name='stock_qty'""")
+        row = cur.fetchone()
+        if row and row[0] == 'text':
+            cur.execute("""SELECT count(*) FROM meituan_store_inventory
+                           WHERE stock_qty IS NOT NULL AND stock_qty !~ '^-?[0-9]+$'""")
+            if cur.fetchone()[0] == 0:
+                cur.execute("""ALTER TABLE meituan_store_inventory
+                               ALTER COLUMN stock_qty TYPE bigint USING NULLIF(stock_qty,'')::bigint""")
+                conn.commit()
+                print('meituan_store_inventory.stock_qty 已转为 bigint')
 
     # 记录数据装载时间 + 重建视图（DROP TABLE CASCADE 会把依赖视图一并删掉）
     cur.execute("CREATE TABLE IF NOT EXISTS data_meta (loaded_at timestamptz NOT NULL)")
