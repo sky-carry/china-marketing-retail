@@ -3,11 +3,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>登录 · 库存核对看板</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a78d6'/%3E%3Cpath d='M14 24h14M14 32h10' stroke='%23ffffff' stroke-width='5' stroke-linecap='round' opacity='.55'/%3E%3Cpath d='M26 42l9 9 16-18' stroke='%23ffffff' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+(function () {
+  var t = localStorage.getItem('theme');
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+})();
+</script>
 <style>
 :root { --surface:#fcfcfb; --page:#f9f9f7; --ink:#0b0b0b; --ink2:#52514e; --ink3:#898781;
   --grid:#e1e0d9; --s1:#2a78d6; --crit:#d03b3b; --border:rgba(11,11,11,.10); }
+:root[data-theme="dark"] { --surface:#1a1a19; --page:#0d0d0d; --ink:#fff; --ink2:#c3c2b7; --ink3:#898781;
+  --grid:#2c2c2a; --s1:#3987e5; --crit:#e66767; --border:rgba(255,255,255,.10); }
 @media (prefers-color-scheme: dark) {
-  :root { --surface:#1a1a19; --page:#0d0d0d; --ink:#fff; --ink2:#c3c2b7; --ink3:#898781;
+  :root:not([data-theme="light"]) { --surface:#1a1a19; --page:#0d0d0d; --ink:#fff; --ink2:#c3c2b7; --ink3:#898781;
     --grid:#2c2c2a; --s1:#3987e5; --crit:#e66767; --border:rgba(255,255,255,.10); } }
 * { box-sizing:border-box; margin:0; }
 body { background:var(--page); color:var(--ink); min-height:100vh; display:flex;

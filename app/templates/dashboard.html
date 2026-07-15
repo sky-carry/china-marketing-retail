@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>库存核对看板</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a78d6'/%3E%3Cpath d='M14 24h14M14 32h10' stroke='%23ffffff' stroke-width='5' stroke-linecap='round' opacity='.55'/%3E%3Cpath d='M26 42l9 9 16-18' stroke='%23ffffff' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+/* 主题优先级：手动选择(localStorage) > 系统偏好。放最前避免闪屏 */
+(function () {
+  var t = localStorage.getItem('theme');
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+})();
+</script>
 <style>
 :root {
   --surface-1: #fcfcfb; --page: #f9f9f7;
@@ -13,8 +20,15 @@
   --s1: #2a78d6; --s2: #1baf7a;
   --crit: #d03b3b; --good-text: #006300;
 }
+:root[data-theme="dark"] {
+  --surface-1: #1a1a19; --page: #0d0d0d;
+  --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-3: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+  --s1: #3987e5; --s2: #199e70;
+  --crit: #e66767; --good-text: #0ca30c;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --surface-1: #1a1a19; --page: #0d0d0d;
     --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-3: #898781;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
@@ -33,6 +47,8 @@ h1 { font-size: 20px; font-weight: 650; }
   border: 1px solid var(--grid); border-radius: 7px; padding: 5px 12px;
   background: var(--surface-1); }
 .logout:hover { color: var(--crit); border-color: var(--crit); }
+button.logout { cursor: pointer; font: inherit; font-size: 12.5px; }
+button.logout:hover { color: var(--s1); border-color: var(--s1); }
 .sub { color: var(--ink-3); font-size: 12.5px; margin: 4px 0 20px; }
 .card { background: var(--surface-1); border: 1px solid var(--border);
   border-radius: 10px; padding: 16px 18px; }
@@ -180,6 +196,7 @@ tfoot tr:hover td { background: none; }
 <div class="wrap">
   <div class="hdr">
     <h1>库存核对看板 · 伯俊 vs 京东秒送 / 美团闪购</h1>
+    <button class="logout" id="btnTheme" title="切换明暗主题"></button>
     <a class="logout" href="logout" title="退出后需重新输入账号密码">⎋ 退出登录</a>
   </div>
   <div class="sub" id="sub"></div>
@@ -281,6 +298,21 @@ tfoot tr:hover td { background: none; }
   <div class="updlg-foot"><button class="btn btn2" id="setClose">关闭</button></div>
 </dialog>
 <script>
+/* ---- 明暗主题切换（独立于数据加载，数据库故障时也可用） ---- */
+(function () {
+  const btn = document.getElementById('btnTheme');
+  const eff = () => document.documentElement.dataset.theme ||
+    (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const paint = () => { btn.textContent = eff() === 'dark' ? '☀ 亮色' : '🌙 暗色'; };
+  btn.onclick = () => {
+    const next = eff() === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem('theme', next);
+    paint();
+  };
+  paint();
+})();
+
 (async () => {
 document.getElementById('sub').textContent = '数据加载中…';
 let DATA;
