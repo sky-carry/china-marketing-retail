@@ -94,6 +94,24 @@ dialog#upDlg::backdrop { background: rgba(0,0,0,.45); }
 .upstatus .st-err { color: var(--crit); font-weight: 600; }
 .updlg-foot { display: flex; justify-content: flex-end; gap: 8px;
   padding: 0 22px 18px; }
+/* 门店映射管理对话框 */
+dialog#setDlg { border: 1px solid var(--border); border-radius: 12px; padding: 0;
+  background: var(--surface-1); color: var(--ink-1); width: min(1360px, 97vw); }
+dialog#setDlg::backdrop { background: rgba(0,0,0,.45); }
+.setbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.setbar .btn { width: auto; padding: 6px 14px; font-size: 12.5px; }
+.setbar input[type=file] { font-size: 12px; color: var(--ink-2); width: 210px; }
+.mapwrap { max-height: 60vh; overflow: auto; border: 1px solid var(--grid); border-radius: 8px; }
+#tMap { font-size: 12.5px; }
+#tMap th { position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
+#tMap td { padding: 4px 6px; white-space: nowrap; }
+#tMap input { width: 110px; background: var(--page); color: var(--ink-1);
+  border: 1px solid var(--grid); border-radius: 5px; padding: 3px 6px; font-size: 12px; }
+#tMap input.wide { width: 170px; }
+#tMap .op a { color: var(--s1); cursor: pointer; margin-right: 8px; text-decoration: none; }
+#tMap .op a.del { color: var(--crit); }
+.setstatus { font-size: 12.5px; margin-top: 8px; min-height: 18px; }
+.setstatus .ok { color: var(--good-text); } .setstatus .err { color: var(--crit); }
 .layout { display: grid; grid-template-columns: minmax(540px, 6fr) 7fr; gap: 14px; align-items: start; }
 @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -173,6 +191,7 @@ tfoot tr:hover td { background: none; }
         <div class="sp"></div>
         <button class="btn btn2" id="btnUpload">上传数据</button>
         <button class="btn" id="btnXlsx">下载 Excel</button>
+        <button class="btn btn2" id="btnSettings" title="门店映射管理">⚙ 设置</button>
       </div>
       <div class="layout">
         <div>
@@ -219,6 +238,23 @@ tfoot tr:hover td { background: none; }
     <div class="upstatus" id="upStatus"></div>
   </div>
   <div class="updlg-foot"><button class="btn btn2" id="upClose">关闭</button></div>
+</dialog>
+<dialog id="setDlg">
+  <div class="updlg-body">
+    <h3>⚙ 门店映射管理</h3>
+    <div class="updlg-sub">飞书《专卖店》主档（feishu_store_mapping）：门店与三平台 ID 的对应关系。修改立即生效并重算看板；<b>备注</b>填「闭店」或「机场店」的门店不参与核对。</div>
+    <div class="setbar">
+      <input type="search" id="mapKw" placeholder="搜索客户 / 门店 / ID…" style="width:220px">
+      <button class="btn" id="mapAdd">＋ 新增门店</button>
+      <div class="sp" style="flex:1"></div>
+      <input type="file" id="mapFile" accept=".xlsx,.xls">
+      <button class="btn btn2" id="mapImport">导入（全量替换）</button>
+      <a class="btn btn2" href="api/mapping/export" style="text-decoration:none">导出 Excel</a>
+    </div>
+    <div class="mapwrap"><table id="tMap"><thead></thead><tbody></tbody></table></div>
+    <div class="setstatus" id="mapStatus"></div>
+  </div>
+  <div class="updlg-foot"><button class="btn btn2" id="setClose">关闭</button></div>
 </dialog>
 <script>
 (async () => {
@@ -540,6 +576,124 @@ upDlg.querySelectorAll('button[data-kind]').forEach(btn => {
     }
   };
 });
+
+/* ---- 门店映射管理（设置） ---- */
+const setDlg = el('setDlg'), mapStatus = el('mapStatus');
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+// [字段, 表头, 是否宽输入框]
+const MCOLS = [['customer_name','客户名称',1],['store_name','门店名称',1],
+  ['province','省份',0],['city','城市',0],['internal_code','内部编码',0],['remark','备注',0],
+  ['jd_name','京东名称',1],['jd_id','京东ID',0],
+  ['meituan_name','美团名称',1],['meituan_id','美团ID',0],
+  ['eleme_name','饿了么名称',1],['eleme_id','饿了么ID',0]];
+let mapRows = [], mapChanged = false;
+
+function mapMsg(html) { mapStatus.innerHTML = html; }
+
+async function mapApi(url, opt) {
+  const res = await fetch(url, opt);
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
+  return j;
+}
+
+function renderMap() {
+  const kw = el('mapKw').value.trim().toLowerCase();
+  const rows = kw ? mapRows.filter(r => MCOLS.some(([f]) =>
+    String(r[f] ?? '').toLowerCase().includes(kw))) : mapRows;
+  el('tMap').tHead.innerHTML = '<tr>' +
+    MCOLS.map(c => `<th>${c[1]}</th>`).join('') + '<th>操作</th></tr>';
+  el('tMap').tBodies[0].innerHTML = rows.map(r => viewRow(r)).join('');
+  mapMsg(`共 ${mapRows.length} 家门店${kw ? `，筛选出 ${rows.length} 家` : ''}`);
+}
+function viewRow(r) {
+  return `<tr data-id="${r.id}">` + MCOLS.map(([f]) =>
+    `<td title="${esc(r[f])}">${esc(r[f])}</td>`).join('') +
+    `<td class="op"><a data-act="edit">编辑</a><a data-act="del" class="del">删除</a></td></tr>`;
+}
+function editRow(r, isNew) {
+  return MCOLS.map(([f, , wide]) =>
+    `<td><input data-f="${f}" class="${wide ? 'wide' : ''}" value="${esc(r[f])}"></td>`).join('') +
+    `<td class="op"><a data-act="save">保存</a><a data-act="cancel">取消</a>${isNew ? '' : ''}</td>`;
+}
+function collect(tr) {
+  const fields = {};
+  tr.querySelectorAll('input[data-f]').forEach(i => fields[i.dataset.f] = i.value.trim());
+  return fields;
+}
+
+async function loadMapping() {
+  mapMsg('加载中…');
+  try {
+    const j = await mapApi('api/mapping');
+    mapRows = j.rows;
+    renderMap();
+  } catch (e) { mapMsg(`<span class="err">加载失败: ${e.message}</span>`); }
+}
+
+el('btnSettings').onclick = () => { setDlg.showModal(); loadMapping(); };
+el('setClose').onclick = () => { setDlg.close(); if (mapChanged) location.reload(); };
+el('mapKw').oninput = renderMap;
+
+el('mapAdd').onclick = () => {
+  if (el('tMap').tBodies[0].querySelector('tr[data-new]')) return;
+  const tr = document.createElement('tr');
+  tr.dataset.new = '1';
+  tr.innerHTML = editRow(Object.fromEntries(MCOLS.map(([f]) => [f, ''])), true);
+  el('tMap').tBodies[0].prepend(tr);
+  tr.querySelector('input').focus();
+};
+
+el('tMap').onclick = async e => {
+  const a = e.target.closest('a[data-act]'); if (!a) return;
+  const tr = a.closest('tr');
+  const id = tr.dataset.id, act = a.dataset.act;
+  try {
+    if (act === 'edit') {
+      const r = mapRows.find(x => String(x.id) === id);
+      tr.innerHTML = editRow(r, false);
+    } else if (act === 'cancel') {
+      if (tr.dataset.new) tr.remove();
+      else tr.outerHTML = viewRow(mapRows.find(x => String(x.id) === id));
+    } else if (act === 'save') {
+      const fields = collect(tr);
+      if (tr.dataset.new) {
+        await mapApi('api/mapping', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
+      } else {
+        await mapApi('api/mapping/' + id, { method: 'PUT',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
+      }
+      mapChanged = true;
+      await loadMapping();
+      mapMsg('<span class="ok">✓ 已保存，看板数据已重算</span>');
+    } else if (act === 'del') {
+      const r = mapRows.find(x => String(x.id) === id);
+      if (!confirm(`确认删除门店「${r.store_name || id}」的映射？`)) return;
+      await mapApi('api/mapping/' + id, { method: 'DELETE' });
+      mapChanged = true;
+      await loadMapping();
+      mapMsg('<span class="ok">✓ 已删除</span>');
+    }
+  } catch (err) { mapMsg(`<span class="err">✕ ${err.message}</span>`); }
+};
+
+el('mapImport').onclick = async () => {
+  const input = el('mapFile');
+  if (!input.files.length) { mapMsg('<span class="err">请先选择文件（格式同"导出 Excel"）</span>'); return; }
+  if (!confirm('导入将全量替换当前映射表（建议先导出备份），确认继续？')) return;
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  mapMsg('导入中…');
+  try {
+    const j = await mapApi('api/mapping/import', { method: 'POST', body: fd });
+    mapChanged = true;
+    await loadMapping();
+    mapMsg(`<span class="ok">✓ 导入完成：${j.inserted} 行${j.skipped_empty ? `（跳过空行 ${j.skipped_empty}）` : ''}</span>`);
+    input.value = '';
+  } catch (err) { mapMsg(`<span class="err">✕ 导入失败: ${err.message}（现有数据未变）</span>`); }
+};
 
 /* ---- 未匹配 ---- */
 el('hUnStore').textContent = `门店未匹配（共 ${fmt(DATA.unStores.length)} 家 · 飞书门店按名字对不上伯俊店仓）`;

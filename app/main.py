@@ -13,6 +13,7 @@ import os
 import time
 import asyncio
 import urllib.parse
+from typing import Optional
 
 from fastapi import FastAPI, Request, Form, Response, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, JSONResponse
@@ -20,7 +21,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import auth
 from .config import settings, TEMPLATE_DIR
-from .services import recon, excel, etl_runner
+from .services import recon, excel, etl_runner, mapping
 
 MAX_UPLOAD = 100 * 1024 * 1024   # 单文件上限 100MB
 
@@ -152,6 +153,97 @@ async def upload_template(request: Request, kind: str):
         data,
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'Content-Disposition': f"attachment; filename*=UTF-8''{fname}"})
+
+
+# ---------- 门店映射管理（设置 → feishu_store_mapping） ----------
+
+def _auth_json(request: Request) -> Optional[JSONResponse]:
+    if not auth.is_authed(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    return None
+
+
+@app.get('/api/mapping')
+async def mapping_list(request: Request):
+    if (r := _auth_json(request)):
+        return r
+    rows = await asyncio.to_thread(mapping.list_rows)
+    return {'rows': rows, 'total': len(rows)}
+
+
+async def _json_body(request: Request):
+    try:
+        return await request.json()
+    except Exception:
+        return None
+
+
+@app.post('/api/mapping')
+async def mapping_create(request: Request):
+    if (r := _auth_json(request)):
+        return r
+    fields = await _json_body(request)
+    if not isinstance(fields, dict):
+        return JSONResponse({'error': '请求体不是有效的 UTF-8 JSON'}, status_code=400)
+    try:
+        new_id = await asyncio.to_thread(mapping.insert_row, fields)
+    except ValueError as e:
+        return JSONResponse({'error': str(e)}, status_code=400)
+    return {'ok': True, 'id': new_id}
+
+
+@app.put('/api/mapping/{row_id}')
+async def mapping_update(request: Request, row_id: int):
+    if (r := _auth_json(request)):
+        return r
+    fields = await _json_body(request)
+    if not isinstance(fields, dict):
+        return JSONResponse({'error': '请求体不是有效的 UTF-8 JSON'}, status_code=400)
+    try:
+        ok = await asyncio.to_thread(mapping.update_row, row_id, fields)
+    except ValueError as e:
+        return JSONResponse({'error': str(e)}, status_code=400)
+    if not ok:
+        return JSONResponse({'error': f'记录 {row_id} 不存在'}, status_code=404)
+    return {'ok': True}
+
+
+@app.delete('/api/mapping/{row_id}')
+async def mapping_delete(request: Request, row_id: int):
+    if (r := _auth_json(request)):
+        return r
+    ok = await asyncio.to_thread(mapping.delete_row, row_id)
+    if not ok:
+        return JSONResponse({'error': f'记录 {row_id} 不存在'}, status_code=404)
+    return {'ok': True}
+
+
+@app.get('/api/mapping/export')
+async def mapping_export(request: Request):
+    if not auth.is_authed(request):
+        return _login_page()
+    data = await asyncio.to_thread(mapping.export_xlsx)
+    fname = urllib.parse.quote(f'门店映射_{time.strftime("%Y-%m-%d")}.xlsx')
+    return Response(
+        data,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{fname}"})
+
+
+@app.post('/api/mapping/import')
+async def mapping_import(request: Request, file: UploadFile = File(...)):
+    if (r := _auth_json(request)):
+        return r
+    if not (file.filename or '').lower().endswith(('.xlsx', '.xls')):
+        return JSONResponse({'error': '只接受 .xlsx / .xls 文件'}, status_code=400)
+    content = await file.read()
+    if len(content) > MAX_UPLOAD:
+        return JSONResponse({'error': '文件超过 100MB 上限'}, status_code=400)
+    try:
+        result = await asyncio.to_thread(mapping.import_xlsx, content)
+    except ValueError as e:
+        return JSONResponse({'error': str(e)}, status_code=400)
+    return {'ok': True, **result}
 
 
 @app.get('/healthz', response_class=PlainTextResponse)
