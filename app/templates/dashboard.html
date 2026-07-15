@@ -70,7 +70,10 @@ input[type=search] { width: 200px; }
 .btn2 { background: var(--page); color: var(--ink-1); border: 1px solid var(--grid); }
 /* 上传数据对话框 */
 dialog#upDlg { border: 1px solid var(--border); border-radius: 12px; padding: 0;
-  background: var(--surface-1); color: var(--ink-1); width: min(560px, 94vw); }
+  background: var(--surface-1); color: var(--ink-1); width: min(640px, 94vw); }
+/* 对话框强制屏幕正中 */
+dialog#upDlg, dialog#setDlg { position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%); margin: 0; max-height: 92vh; overflow-y: auto; }
 dialog#upDlg::backdrop { background: rgba(0,0,0,.45); }
 .updlg-body { padding: 20px 22px 18px; font-size: 13.5px; }
 .updlg-body h3 { font-size: 15px; margin-bottom: 4px; }
@@ -92,6 +95,12 @@ dialog#upDlg::backdrop { background: rgba(0,0,0,.45); }
 .upstatus .st-run { color: var(--s1); font-weight: 600; }
 .upstatus .st-ok { color: var(--good-text); font-weight: 600; }
 .upstatus .st-err { color: var(--crit); font-weight: 600; }
+.uphist { margin-top: 14px; }
+.uphist h4 { font-size: 12.5px; color: var(--ink-2); margin-bottom: 6px; }
+.uphist table { font-size: 12px; }
+.uphist td, .uphist th { padding: 4px 8px; white-space: nowrap; }
+.uphist td.msg { white-space: normal; max-width: 220px; }
+.uphist .ok { color: var(--good-text); } .uphist .err { color: var(--crit); }
 .updlg-foot { display: flex; justify-content: flex-end; gap: 8px;
   padding: 0 22px 18px; }
 /* 门店映射管理对话框 */
@@ -236,6 +245,12 @@ tfoot tr:hover td { background: none; }
       <button class="btn" data-kind="bojun" data-file="upFileBj">上传</button>
     </div>
     <div class="upstatus" id="upStatus"></div>
+    <div class="uphist">
+      <h4>上传历史（最近 20 次）</h4>
+      <div class="tblwrap" style="max-height:180px;overflow-y:auto">
+        <table id="tHist"><thead><tr><th>时间</th><th>数据</th><th>文件名</th><th>结果</th><th>说明</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
   </div>
   <div class="updlg-foot"><button class="btn btn2" id="upClose">关闭</button></div>
 </dialog>
@@ -529,15 +544,40 @@ if (location.protocol === 'file:') {
 
 /* ---- 上传数据 ---- */
 const upDlg = el('upDlg'), upStatus = el('upStatus');
-el('btnUpload').onclick = () => { upDlg.showModal(); pollEtl(false); };
+el('btnUpload').onclick = () => { upDlg.showModal(); pollEtl(false); loadHistory(); };
 el('upClose').onclick = () => upDlg.close();
 let etlTimer = null, etlWasRunning = false;
 
 function showStatus(html) { upStatus.classList.add('show'); upStatus.innerHTML = html; }
 
+// 会话过期（服务发版后旧页面）统一处理：提示并回登录页
+function authExpired(res) {
+  if (res.status !== 401) return false;
+  showStatus('<span class="st-err">登录已过期，3 秒后跳转登录页…</span>');
+  setTimeout(() => location.reload(), 3000);
+  return true;
+}
+
+async function loadHistory() {
+  try {
+    const res = await fetch('api/upload/history');
+    if (!res.ok) return;
+    const j = await res.json();
+    el('tHist').tBodies[0].innerHTML = (j.rows || []).map(r => `<tr>
+      <td>${r.time}</td><td>${esc(r.label)}</td><td title="${esc(r.filename)}">${esc((r.filename||'').slice(0,30))}</td>
+      <td class="${r.state === 'success' ? 'ok' : 'err'}">${r.state === 'success' ? '成功' : '失败'}</td>
+      <td class="msg">${esc(r.message)}</td></tr>`).join('') ||
+      '<tr><td colspan="5" style="color:var(--ink-3)">暂无记录</td></tr>';
+  } catch {}
+}
+
 async function pollEtl(loop = true) {
   let s;
-  try { s = await (await fetch('api/etl/status')).json(); } catch { return; }
+  try {
+    const res = await fetch('api/etl/status');
+    if (authExpired(res)) return;
+    s = await res.json();
+  } catch { return; }
   if (s.state === 'running') {
     etlWasRunning = true;
     showStatus(`<span class="st-run">⏳ ${s.label} 入库中… ${s.running_seconds ?? ''}s</span><pre>${s.log || ''}</pre>`);
@@ -547,9 +587,11 @@ async function pollEtl(loop = true) {
     if (s.state === 'success' && etlWasRunning) {
       showStatus(`<span class="st-ok">✓ ${s.label} 入库完成</span>，2 秒后自动刷新看板…<pre>${s.log || ''}</pre>`);
       etlWasRunning = false;
+      loadHistory();
       setTimeout(() => location.reload(), 2000);
     } else if (s.state === 'error') {
       showStatus(`<span class="st-err">✕ ${s.label} 入库失败</span>（现有数据未受影响）<pre>${s.log || ''}</pre>`);
+      if (etlWasRunning) loadHistory();
       etlWasRunning = false;
     }
   }
@@ -566,6 +608,7 @@ upDlg.querySelectorAll('button[data-kind]').forEach(btn => {
     showStatus('<span class="st-run">⏳ 文件上传中…</span>');
     try {
       const res = await fetch('api/upload', { method: 'POST', body: fd });
+      if (authExpired(res)) return;
       const j = await res.json();
       if (!res.ok) { showStatus(`<span class="st-err">✕ ${j.error || res.status}</span>`); return; }
       pollEtl();
@@ -593,6 +636,11 @@ function mapMsg(html) { mapStatus.innerHTML = html; }
 
 async function mapApi(url, opt) {
   const res = await fetch(url, opt);
+  if (res.status === 401) {
+    mapMsg('<span class="err">登录已过期，3 秒后跳转登录页…</span>');
+    setTimeout(() => location.reload(), 3000);
+    throw new Error('登录已过期');
+  }
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
   return j;

@@ -128,7 +128,7 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
         await asyncio.to_thread(etl_runner.save_upload, kind, content)
     except RuntimeError as e:
         return JSONResponse({'error': str(e)}, status_code=409)
-    if not etl_runner.start_etl(kind):
+    if not etl_runner.start_etl(kind, filename=file.filename or '', size=len(content)):
         return JSONResponse({'error': '已有入库任务在执行，请稍候'}, status_code=409)
     return {'ok': True, 'kind': kind, 'size': len(content)}
 
@@ -138,6 +138,14 @@ async def etl_status(request: Request):
     if not auth.is_authed(request):
         return JSONResponse({'error': 'unauthorized'}, status_code=401)
     return etl_runner.status()
+
+
+@app.get('/api/upload/history')
+async def upload_history(request: Request):
+    if not auth.is_authed(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    rows = await asyncio.to_thread(etl_runner.history)
+    return {'rows': rows}
 
 
 @app.get('/api/template/{kind}')
@@ -242,7 +250,11 @@ async def mapping_import(request: Request, file: UploadFile = File(...)):
     try:
         result = await asyncio.to_thread(mapping.import_xlsx, content)
     except ValueError as e:
+        etl_runner.add_log('门店映射导入', file.filename or '', len(content),
+                           'error', f'失败: {e}')
         return JSONResponse({'error': str(e)}, status_code=400)
+    etl_runner.add_log('门店映射导入', file.filename or '', len(content),
+                       'success', f"导入 {result['inserted']} 行")
     return {'ok': True, **result}
 
 

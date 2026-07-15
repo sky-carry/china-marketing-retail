@@ -4,6 +4,7 @@
 同一时间只允许一个 ETL 任务；状态与日志保存在内存里供前端轮询。
 """
 import os
+import re
 import sys
 import time
 import shutil
@@ -12,6 +13,7 @@ import subprocess
 from typing import Optional
 
 from ..config import BASE_DIR
+from ..db import get_conn
 from . import recon
 
 EXCEL_DIR = os.path.join(BASE_DIR, 'excel')
@@ -65,10 +67,50 @@ def build_template(kind: str) -> bytes:
 _lock = threading.Lock()
 _state = {
     'state': 'idle',          # idle | running | success | error
-    'kind': '', 'label': '',
+    'kind': '', 'label': '', 'filename': '', 'size': 0,
     'started_at': 0.0, 'finished_at': 0.0,
     'log': '',
 }
+
+
+# ---------- 上传历史 ----------
+
+def _ensure_log_table(cur):
+    cur.execute("""CREATE TABLE IF NOT EXISTS upload_log (
+        id bigserial PRIMARY KEY,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        label text NOT NULL,
+        filename text,
+        size_bytes bigint,
+        state text NOT NULL,
+        message text
+    )""")
+
+
+def add_log(label: str, filename: str, size: int, state: str, message: str) -> None:
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            _ensure_log_table(cur)
+            cur.execute(
+                'INSERT INTO upload_log (label, filename, size_bytes, state, message) '
+                'VALUES (%s, %s, %s, %s, %s)',
+                (label, filename, size, state, (message or '')[:500]))
+            conn.commit()
+    except Exception:            # noqa: BLE001 —— 历史记录失败不影响主流程
+        pass
+
+
+def history(limit: int = 20) -> list:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        _ensure_log_table(cur)
+        conn.commit()
+        cur.execute("""SELECT to_char(created_at, 'YYYY-MM-DD HH24:MI'), label, filename,
+                              size_bytes, state, message
+                       FROM upload_log ORDER BY id DESC LIMIT %s""", (limit,))
+        return [dict(zip(('time', 'label', 'filename', 'size', 'state', 'message'), r))
+                for r in cur.fetchall()]
 
 
 def status() -> dict:
@@ -108,12 +150,13 @@ def save_upload(kind: str, content: bytes) -> str:
     ) from last_err
 
 
-def start_etl(kind: str) -> bool:
+def start_etl(kind: str, filename: str = '', size: int = 0) -> bool:
     """启动后台 ETL；已有任务在跑时返回 False。"""
     with _lock:
         if _state['state'] == 'running':
             return False
         _state.update(state='running', kind=kind, label=UPLOAD_KINDS[kind][2],
+                      filename=filename, size=size,
                       started_at=time.time(), finished_at=0.0, log='')
     threading.Thread(target=_run, args=(kind,), daemon=True).start()
     return True
@@ -151,5 +194,15 @@ def _run(kind: str):
                 _state['log'] = '\n'.join(lines[-15:])
     with _lock:
         _state.update(state='success' if ok else 'error', finished_at=time.time())
+        label, fname, size = _state['label'], _state['filename'], _state['size']
+    # 写入上传历史：成功记入库行数，失败记错误原因
+    text = '\n'.join(lines)
+    if ok:
+        m = re.search(r'(\d+) rows', text)
+        msg = f'入库 {m.group(1)} 行' if m else '入库完成'
+    else:
+        err_lines = [l for l in lines if l.strip() and 'Warning' not in l]
+        msg = '失败: ' + (err_lines[-1] if err_lines else '未知错误')
+    add_log(label.split('（')[0], fname, size, 'success' if ok else 'error', msg)
     if ok:
         recon.invalidate()      # 让 /api/data 立即出新数据
