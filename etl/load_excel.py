@@ -93,6 +93,10 @@ RENAME = {
   '所在城市':'city','批次':'batch','行政区':'district','门店地址':'store_address','营业状态':'business_status',
   '门店状态':'store_status','小时购营业状态':'hourly_business_status','_blank':'extra_status',
   '匹配表状态':'match_table_status','验真状态':'verification_status'},
+ 'feishu_meituan_outlet': {'门店名称':'store_name','门店ID':'store_id','内部编码':'internal_code',
+  '营业状态':'business_status','门店类型':'store_type','经销商':'dealer','预警情况':'warning_status',
+  '所在城市':'city','联系电话':'contact_phone','门店地址':'store_address','营业时间':'business_hours',
+  '配送方式':'delivery_method'},
  'feishu_region_contact': {'一级经销商':'primary_dealer','区域':'region','区域经理':'region_manager',
   '即时零售对接人':'instant_retail_contact'},
 }
@@ -149,9 +153,16 @@ def load_feishu():
     out.append(('feishu_store_mapping', '即时零售门店上翻明细-专卖店（飞书文档主表：三平台门店映射）', df))
     out.append(('feishu_jd_outlet', '即时零售门店上翻明细-京东网点（飞书文档附表）',
                 pd.read_excel(feishu, sheet_name='京东网点')))
+    out.extend(load_meituan_outlet())
     out.append(('feishu_region_contact', '即时零售门店上翻明细-各区域对接人明细（飞书文档附表）',
                 pd.read_excel(feishu, sheet_name='各区域对接人明细')))
     return out
+
+
+def load_meituan_outlet():
+    """美团网点单独可刷新：--only meituan_outlet 时不会动 feishu_store_mapping（保护看板手工修改）"""
+    df = pd.read_excel(src('_feishu_即时零售门店上翻明细.xlsx'), sheet_name='美团网点')
+    return [('feishu_meituan_outlet', '即时零售门店上翻明细-美团网点（飞书文档附表）', df)]
 
 
 LOADERS = {
@@ -160,7 +171,8 @@ LOADERS = {
     'jd_store': load_jd_store,
     'meituan_store': load_meituan_store,
     'meituan_inventory': load_meituan_inventory,
-    'feishu': load_feishu,
+    'feishu': load_feishu,                    # 全部 4 个子表（会覆盖门店映射的手工修改！）
+    'meituan_outlet': load_meituan_outlet,    # 仅美团网点
 }
 
 # ---------- 类型推断与装载 ----------

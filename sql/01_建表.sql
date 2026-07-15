@@ -1,11 +1,11 @@
 -- 库存核对平台 · 建表语句（由 inventory_check 库导出）
 -- 先执行: CREATE DATABASE inventory_check ENCODING 'UTF8';
--- 数据装载见 scripts/load_excel.py
+-- 数据装载见 etl/load_excel.py（伯俊 API 版见 etl/sync_bojun.py）
 
 CREATE TABLE "bojun_offline_inventory" (
   "store_warehouse" text,
   "product_code" text,
-  "style_no" bigint,
+  "style_no" text,
   "product_name" text,
   "standard_price" double precision,
   "stock_qty" bigint,
@@ -84,9 +84,37 @@ COMMENT ON COLUMN "feishu_jd_outlet"."store_address" IS '门店地址';
 COMMENT ON COLUMN "feishu_jd_outlet"."business_status" IS '营业状态';
 COMMENT ON COLUMN "feishu_jd_outlet"."store_status" IS '门店状态';
 COMMENT ON COLUMN "feishu_jd_outlet"."hourly_business_status" IS '小时购营业状态';
-COMMENT ON COLUMN "feishu_jd_outlet"."extra_status" IS '原表无表头列（营业/闭店 人工标注）';
+COMMENT ON COLUMN "feishu_jd_outlet"."extra_status" IS '_blank';
 COMMENT ON COLUMN "feishu_jd_outlet"."match_table_status" IS '匹配表状态';
 COMMENT ON COLUMN "feishu_jd_outlet"."verification_status" IS '验真状态';
+
+CREATE TABLE "feishu_meituan_outlet" (
+  "store_name" text,
+  "store_id" text,
+  "internal_code" text,
+  "business_status" text,
+  "store_type" text,
+  "dealer" text,
+  "warning_status" text,
+  "city" text,
+  "contact_phone" text,
+  "store_address" text,
+  "business_hours" text,
+  "delivery_method" text
+);
+COMMENT ON TABLE "feishu_meituan_outlet" IS '即时零售门店上翻明细-美团网点（飞书文档附表）';
+COMMENT ON COLUMN "feishu_meituan_outlet"."store_name" IS '门店名称';
+COMMENT ON COLUMN "feishu_meituan_outlet"."store_id" IS '门店ID';
+COMMENT ON COLUMN "feishu_meituan_outlet"."internal_code" IS '内部编码';
+COMMENT ON COLUMN "feishu_meituan_outlet"."business_status" IS '营业状态';
+COMMENT ON COLUMN "feishu_meituan_outlet"."store_type" IS '门店类型';
+COMMENT ON COLUMN "feishu_meituan_outlet"."dealer" IS '经销商';
+COMMENT ON COLUMN "feishu_meituan_outlet"."warning_status" IS '预警情况';
+COMMENT ON COLUMN "feishu_meituan_outlet"."city" IS '所在城市';
+COMMENT ON COLUMN "feishu_meituan_outlet"."contact_phone" IS '联系电话';
+COMMENT ON COLUMN "feishu_meituan_outlet"."store_address" IS '门店地址';
+COMMENT ON COLUMN "feishu_meituan_outlet"."business_hours" IS '营业时间';
+COMMENT ON COLUMN "feishu_meituan_outlet"."delivery_method" IS '配送方式';
 
 CREATE TABLE "feishu_region_contact" (
   "primary_dealer" text,
@@ -101,7 +129,7 @@ COMMENT ON COLUMN "feishu_region_contact"."region_manager" IS '区域经理';
 COMMENT ON COLUMN "feishu_region_contact"."instant_retail_contact" IS '即时零售对接人';
 
 CREATE TABLE "feishu_store_mapping" (
-  "seq_no" bigint,
+  "seq_no" text,
   "province" text,
   "city" text,
   "customer_name" text,
@@ -118,7 +146,8 @@ CREATE TABLE "feishu_store_mapping" (
   "eleme_id" text,
   "eleme_business_status" text,
   "jd_enable_status" double precision,
-  "verification_status" double precision
+  "verification_status" double precision,
+  "id" bigint
 );
 COMMENT ON TABLE "feishu_store_mapping" IS '即时零售门店上翻明细-专卖店（飞书文档主表：三平台门店映射）';
 COMMENT ON COLUMN "feishu_store_mapping"."seq_no" IS '序号';
@@ -137,8 +166,8 @@ COMMENT ON COLUMN "feishu_store_mapping"."meituan_business_status" IS '美团营
 COMMENT ON COLUMN "feishu_store_mapping"."eleme_name" IS '饿了么名称';
 COMMENT ON COLUMN "feishu_store_mapping"."eleme_id" IS '饿了么ID';
 COMMENT ON COLUMN "feishu_store_mapping"."eleme_business_status" IS '饿了么营业状态';
-COMMENT ON COLUMN "feishu_store_mapping"."jd_enable_status" IS '京东启用状态（源表为 #REF! 公式错误，全为 NULL）';
-COMMENT ON COLUMN "feishu_store_mapping"."verification_status" IS '验真状态（源表为 #REF! 公式错误，全为 NULL）';
+COMMENT ON COLUMN "feishu_store_mapping"."jd_enable_status" IS '京东启用状态';
+COMMENT ON COLUMN "feishu_store_mapping"."verification_status" IS '验真状态';
 
 CREATE TABLE "jd_store" (
   "store_code" text,
@@ -185,8 +214,8 @@ COMMENT ON COLUMN "jd_store"."store_status" IS '门店状态';
 COMMENT ON COLUMN "jd_store"."hourly_business_status" IS '小时购营业状态';
 COMMENT ON COLUMN "jd_store"."store_qualification" IS '门店资质';
 COMMENT ON COLUMN "jd_store"."delivery_capacity_status" IS '运力状态（只开通到店团购商家无需关注）';
-COMMENT ON COLUMN "jd_store"."miaosong_store_link" IS '秒送门详链接（源表头原文：秒送门祥链接）';
-COMMENT ON COLUMN "jd_store"."daojia_store_link" IS '到家门详链接（源表头原文：到家门祥链接）';
+COMMENT ON COLUMN "jd_store"."miaosong_store_link" IS '秒送门祥链接';
+COMMENT ON COLUMN "jd_store"."daojia_store_link" IS '到家门祥链接';
 
 CREATE TABLE "jd_store_inventory" (
   "store_code" text,
@@ -208,7 +237,7 @@ CREATE TABLE "jd_store_inventory" (
   "guide_price" double precision,
   "jd_sku_code" text
 );
-COMMENT ON TABLE "jd_store_inventory" IS '京东门店库存（京东门店库存.xlsx / 库存明细）';
+COMMENT ON TABLE "jd_store_inventory" IS '京东门店库存（京东门店库存-新.xlsx，商家商品编号补全版）';
 COMMENT ON COLUMN "jd_store_inventory"."store_code" IS '门店编号';
 COMMENT ON COLUMN "jd_store_inventory"."store_name" IS '门店名称';
 COMMENT ON COLUMN "jd_store_inventory"."sku_code" IS 'SKU编码';
@@ -262,7 +291,7 @@ CREATE TABLE "meituan_store_inventory" (
   "spec_name" text,
   "stock_qty" bigint
 );
-COMMENT ON TABLE "meituan_store_inventory" IS '美团门店库存（美团门店库存.xlsx / 商品明细）';
+COMMENT ON TABLE "meituan_store_inventory" IS '美团门店库存（Excel 上传 / 商品明细）';
 COMMENT ON COLUMN "meituan_store_inventory"."store_id" IS '门店ID';
 COMMENT ON COLUMN "meituan_store_inventory"."store_name" IS '门店名称';
 COMMENT ON COLUMN "meituan_store_inventory"."province_city" IS '省份/城市';
@@ -271,3 +300,8 @@ COMMENT ON COLUMN "meituan_store_inventory"."internal_sku_code" IS '店内码/�
 COMMENT ON COLUMN "meituan_store_inventory"."sku_id" IS 'sku_id';
 COMMENT ON COLUMN "meituan_store_inventory"."spec_name" IS '规格名称';
 COMMENT ON COLUMN "meituan_store_inventory"."stock_qty" IS '库存';
+
+-- 运行时辅助表（由应用自动创建）
+-- store_alias: 门店别名人工对照（sql/02_核对视图.sql 中 IF NOT EXISTS 创建）
+-- data_meta:   数据装载时间（loader 维护）
+-- upload_log:  看板上传历史（app 自动建表）
