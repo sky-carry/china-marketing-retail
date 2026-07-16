@@ -691,19 +691,22 @@ upDlg.querySelectorAll('button[data-kind]').forEach(btn => {
   };
 });
 
-/* ---- 网点保障 Tab（公司 ▶ 货号 两级树） ----
-   outletGuard 行: [0]客户 [1]货号 [2]品名 [3]线下总和 [4]网点数 [5]达标数 [6]最小网点库存 [7]最大缺口 */
+/* ---- 网点保障 Tab（公司 ▶ 货号 两级树，京东+美团合并） ----
+   outletGuard 行: [0]客户 [1]货号 [2]品名 [3]线下总和 [4]网点数 [5]达标数
+                   [6]京东网点 [7]京东达标 [8]美团网点 [9]美团达标 [10]最小库存 [11]最大缺口 */
 let gSel = null;
 const gOpen = new Set();          // 展开的公司
 const GCOLS = [
-  ['客户 / 货号', '一级为公司（与京东网点经销商精确匹配），▶ 展开显示货号'],
+  ['客户 / 货号', '一级为公司（与京东/美团网点的经销商精确匹配），▶ 展开显示货号'],
   ['品名', '公司行显示货号统计'],
   ['线下总和', '该公司所有在营专卖店的伯俊库存合计（>0 的货号才参与核对）；公司行为各货号合计'],
-  ['网点数', '该公司门店状态=启用的京东网点数'],
-  ['达标', '京东可用库存 ≥ 线下总和 的网点数（公司行为达标货号数/货号数）'],
-  ['最小库存', '所有网点中最低的京东可用库存（未上架按 0 计）'],
+  ['京东网点', '达标数/网点数：京东可用库存 ≥ 线下总和 的启用网点数；公司行为京东网点总数'],
+  ['美团网点', '达标数/网点数：美团库存 ≥ 线下总和 的营业中网点数；公司行为美团网点总数；— 表示该公司无美团网点'],
+  ['最小库存', '两平台所有网点中最低的库存（未上架按 0 计）'],
   ['缺口', 'min(网点库存 − 线下总和)，负数越大缺口越严重'],
 ];
+const okCell = (ok, cnt) => cnt === 0 ? '<td class="num null">—</td>'
+  : `<td class="num ${ok < cnt ? 'pos' : 'zero'}">${fmt(ok)}/${fmt(cnt)}</td>`;
 function guardTree() {
   const kw = el('gKw').value.trim().toLowerCase();
   const onlyBad = el('gOnlyBad').checked;
@@ -713,15 +716,15 @@ function guardTree() {
   const m = new Map();
   for (const r of rows) {
     let c = m.get(r[0]);
-    if (!c) m.set(r[0], c = { name: r[0], outletCnt: r[4], prods: [],
+    if (!c) m.set(r[0], c = { name: r[0], jdCnt: r[6], mtCnt: r[8], prods: [],
                               offlineSum: 0, badProds: 0, worst: 0 });
     c.prods.push(r);
     c.offlineSum += r[3];
     if (r[5] < r[4]) c.badProds++;
-    c.worst = Math.min(c.worst, r[7]);
+    c.worst = Math.min(c.worst, r[11]);
   }
   const custs = [...m.values()].sort((a, b) => a.worst - b.worst);
-  custs.forEach(c => c.prods.sort((a, b) => a[7] - b[7]));
+  custs.forEach(c => c.prods.sort((a, b) => a[11] - b[11]));
   return { custs, shown: rows.length };
 }
 function renderGuard() {
@@ -733,21 +736,19 @@ function renderGuard() {
     const open = !!kw || gOpen.has(c.name);      // 搜索时自动展开
     return `<tr class="g-c ${open ? 'open' : ''}" data-c="${esc(c.name)}" style="cursor:pointer">
       <td><span class="name-cell"><span class="exp">▶</span><span class="nm" title="${esc(c.name)}">${esc(c.name)}</span></span></td>
-      <td class="num" style="white-space:nowrap">${fmt(c.prods.length)} 个货号</td>
+      <td class="num" style="white-space:nowrap">${fmt(c.prods.length)} 货号（不达标 ${fmt(c.badProds)}）</td>
       <td class="num">${fmt(c.offlineSum)}</td>
-      <td class="num">${fmt(c.outletCnt)}</td>
-      <td class="num ${c.badProds ? 'pos' : 'zero'}">${fmt(c.prods.length - c.badProds)}/${fmt(c.prods.length)}</td>
+      <td class="num">${c.jdCnt ? fmt(c.jdCnt) + ' 个' : '—'}</td>
+      <td class="num">${c.mtCnt ? fmt(c.mtCnt) + ' 个' : '—'}</td>
       <td class="num"></td>${diffCell(c.worst)}</tr>` +
-    (open ? c.prods.map(r => {
-      const bad = r[5] < r[4];
-      return `<tr class="g-p ${gSel === r[0] + '|' + r[1] ? 'sel' : ''}" data-c="${esc(r[0])}" data-p="${esc(r[1])}" style="cursor:pointer">
+    (open ? c.prods.map(r =>
+      `<tr class="g-p ${gSel === r[0] + '|' + r[1] ? 'sel' : ''}" data-c="${esc(r[0])}" data-p="${esc(r[1])}" style="cursor:pointer">
         <td style="padding-left:34px">${esc(r[1])}</td>
         <td class="gnm" title="${esc(r[2])}">${esc(r[2] || '')}</td>
         <td class="num">${fmt(r[3])}</td>
-        <td class="num">${fmt(r[4])}</td>
-        <td class="num ${bad ? 'pos' : 'zero'}">${fmt(r[5])}/${fmt(r[4])}</td>
-        <td class="num">${fmt(r[6])}</td>${diffCell(r[7])}</tr>`;
-    }).join('') : '');
+        ${okCell(r[7], r[6])}
+        ${okCell(r[9], r[8])}
+        <td class="num">${fmt(r[10])}</td>${diffCell(r[11])}</tr>`).join('') : '');
   }).join('');
   const bad = DATA.outletGuard.filter(r => r[5] < r[4]).length;
   el('tGuard').tFoot.innerHTML = `<tr>
@@ -761,17 +762,19 @@ async function loadGuardDetail(cust, prod) {
     if (res.status === 401) { location.reload(); return; }
     const j = await res.json();
     const sum = DATA.outletGuard.find(r => r[0] === cust && r[1] === prod);
-    const total = j.rows.length, ok = j.rows.filter(r => r[4]).length;
-    const unlisted = j.rows.filter(r => r[2] === null).length;
+    const total = j.rows.length, ok = j.rows.filter(r => r[5]).length;
+    const jd = j.rows.filter(r => r[0] === '京东').length;
+    const unlisted = j.rows.filter(r => r[3] === null).length;
     el('gTitle').innerHTML = `${esc(cust)} · ${esc(prod)}　线下总和 <b>${fmt(sum ? sum[3] : '')}</b>，网点需 ≥ 此数 ｜ ` +
-      `共 <b>${fmt(total)}</b> 个网点：<span class="zero">达标 ${fmt(ok)}</span> · ` +
+      `共 <b>${fmt(total)}</b> 个网点（京东 ${fmt(jd)} · 美团 ${fmt(total - jd)}）：<span class="zero">达标 ${fmt(ok)}</span> · ` +
       `<span class="pos">不足 ${fmt(total - ok)}</span>${unlisted ? `（含未上架 ${fmt(unlisted)}）` : ''}`;
-    el('tGuardDet').innerHTML = '<thead><tr><th>网点</th><th>门店编号</th><th class="num">京东库存</th><th class="num">缺口</th><th>状态</th></tr></thead><tbody>' +
+    el('tGuardDet').innerHTML = '<thead><tr><th>平台</th><th>网点</th><th>门店编号</th><th class="num">平台库存</th><th class="num">缺口</th><th>状态</th></tr></thead><tbody>' +
       j.rows.map(r => `<tr>
-        <td title="${esc(r[0])}">${esc(r[0])}</td><td>${esc(r[1])}</td>
-        <td class="num">${r[2] === null ? '<span class="null">未上架</span>' : fmt(r[2])}</td>
-        ${diffCell(r[3])}
-        <td class="${r[4] ? 'zero' : 'pos'}">${r[4] ? '✓ 达标' : '✕ 不足'}</td></tr>`).join('') + '</tbody>';
+        <td>${esc(r[0])}</td>
+        <td title="${esc(r[1])}">${esc(r[1])}</td><td>${esc(r[2])}</td>
+        <td class="num">${r[3] === null ? '<span class="null">未上架</span>' : fmt(r[3])}</td>
+        ${diffCell(r[4])}
+        <td class="${r[5] ? 'zero' : 'pos'}">${r[5] ? '✓ 达标' : '✕ 不足'}</td></tr>`).join('') + '</tbody>';
   } catch (e) {
     el('gTitle').textContent = '明细加载失败: ' + e.message;
   }

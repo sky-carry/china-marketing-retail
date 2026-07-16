@@ -65,10 +65,11 @@ def build_xlsx() -> bytes:
                                        r[8], _maintain_rate(r[6], r[4]), r[9]]
                                       for r in rows))
         sheet('网点保障汇总',
-              ['客户名称', '货号', '品名', '线下伯俊总和', '启用网点数', '达标网点数',
-               '最小网点库存', '最大缺口'],
+              ['客户名称', '货号', '品名', '线下伯俊总和', '网点数', '达标网点数',
+               '京东网点', '京东达标', '美团网点', '美团达标', '最小网点库存', '最大缺口'],
               """SELECT customer_name, product_code, product_name, offline_qty,
-                        outlet_cnt, ok_cnt, min_outlet_qty, worst_gap
+                        outlet_cnt, ok_cnt, jd_cnt, jd_ok, mt_cnt, mt_ok,
+                        min_outlet_qty, worst_gap
                  FROM v_outlet_guard_summary
                  ORDER BY worst_gap, customer_name, product_code""")
         sheet('未匹配门店',

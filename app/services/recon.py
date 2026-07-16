@@ -52,11 +52,12 @@ def fetch_payload() -> dict:
 
         cur.execute("""
             SELECT customer_name, product_code, product_name, offline_qty,
-                   outlet_cnt, ok_cnt, min_outlet_qty, worst_gap
+                   outlet_cnt, ok_cnt, jd_cnt, jd_ok, mt_cnt, mt_ok,
+                   min_outlet_qty, worst_gap
             FROM v_outlet_guard_summary
             ORDER BY worst_gap, customer_name, product_code""")
-        outlet_guard = [[r[0], r[1], r[2], _int(r[3]), r[4], r[5], _int(r[6]), _int(r[7])]
-                        for r in cur.fetchall()]
+        outlet_guard = [[r[0], r[1], r[2], _int(r[3]), r[4], r[5], r[6], r[7], r[8], r[9],
+                         _int(r[10]), _int(r[11])] for r in cur.fetchall()]
 
         cur.execute("SELECT count(*) FROM v_dim_store WHERE NOT is_active")
         inactive = cur.fetchone()[0]
@@ -79,11 +80,11 @@ def fetch_outlet_detail(customer: str, product: str) -> list:
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT outlet_name, outlet_code, outlet_qty, gap, is_ok
+            SELECT platform, outlet_name, outlet_code, outlet_qty, gap, is_ok
             FROM v_outlet_guard
             WHERE customer_name = %s AND product_code = %s
-            ORDER BY COALESCE(outlet_qty, -1), outlet_name""", (customer, product))
-        return [[r[0], r[1], _int(r[2]), _int(r[3]), r[4]] for r in cur.fetchall()]
+            ORDER BY COALESCE(outlet_qty, -1), platform, outlet_name""", (customer, product))
+        return [[r[0], r[1], r[2], _int(r[3]), _int(r[4]), r[5]] for r in cur.fetchall()]
 
 
 # ---- 缓存层：payload 序列化结果 + ETag，跟随 cache_ttl 失效 ----
