@@ -83,7 +83,7 @@ def fetch_outlet_detail(customer: str, product: str) -> list:
             SELECT platform, outlet_name, outlet_code, outlet_qty, gap, is_ok
             FROM v_outlet_guard
             WHERE customer_name = %s AND product_code = %s
-            ORDER BY COALESCE(outlet_qty, -1), platform, outlet_name""", (customer, product))
+            ORDER BY platform, COALESCE(outlet_qty, -1), outlet_name""", (customer, product))
         return [[r[0], r[1], r[2], _int(r[3]), _int(r[4]), r[5]] for r in cur.fetchall()]
 
 
