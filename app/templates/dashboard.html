@@ -184,8 +184,13 @@ tfoot tr:hover td { background: none; }
 .exp { display: inline-block; width: 16px; color: var(--ink-3); font-size: 10px;
   transition: transform .12s; }
 .c-row.open .exp, .g-c.open .exp { transform: rotate(90deg); }
+/* 网点保障：左右面板比例与列宽控制，避免横向滚动条 */
+#p-guard .layout { grid-template-columns: minmax(520px, 13fr) 11fr; }
 #tGuard td { white-space: nowrap; }
-#tGuard td.gnm { max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
+#tGuard td:first-child { max-width: 175px; overflow: hidden; text-overflow: ellipsis; }
+#tGuard td.gnm { max-width: 165px; overflow: hidden; text-overflow: ellipsis; }
+#tGuardDet td { white-space: nowrap; }
+#tGuardDet td:first-child { max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
 #tGuard .g-c td { font-weight: 600; }
 #tGuard .g-p td { font-weight: 400; color: var(--ink-2); }
 #tGuard .g-p td.pos { color: var(--crit); } #tGuard .g-p td.zero { color: var(--good-text); }
@@ -697,9 +702,9 @@ const GCOLS = [
   ['品名', '公司行显示货号统计'],
   ['线下总和', '该公司所有在营专卖店的伯俊库存合计（>0 的货号才参与核对）；公司行为各货号合计'],
   ['网点数', '该公司门店状态=启用的京东网点数'],
-  ['达标网点', '京东可用库存 ≥ 线下总和 的网点数（公司行为达标货号数/货号数）'],
-  ['最小网点库存', '所有网点中最低的京东可用库存（未上架按 0 计）'],
-  ['最大缺口', 'min(网点库存 − 线下总和)，负数越大缺口越严重'],
+  ['达标', '京东可用库存 ≥ 线下总和 的网点数（公司行为达标货号数/货号数）'],
+  ['最小库存', '所有网点中最低的京东可用库存（未上架按 0 计）'],
+  ['缺口', 'min(网点库存 − 线下总和)，负数越大缺口越严重'],
 ];
 function guardTree() {
   const kw = el('gKw').value.trim().toLowerCase();
