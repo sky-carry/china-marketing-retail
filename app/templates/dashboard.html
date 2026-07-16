@@ -183,7 +183,11 @@ tfoot tr:hover td { background: none; }
 #tTree tr.sel td, #tGuard tbody tr.sel td { background: color-mix(in srgb, var(--s1) 14%, transparent); }
 .exp { display: inline-block; width: 16px; color: var(--ink-3); font-size: 10px;
   transition: transform .12s; }
-.c-row.open .exp { transform: rotate(90deg); }
+.c-row.open .exp, .g-c.open .exp { transform: rotate(90deg); }
+#tGuard .g-c td { font-weight: 600; }
+#tGuard .g-p td { font-weight: 400; color: var(--ink-2); }
+#tGuard .g-p td.pos { color: var(--crit); } #tGuard .g-p td.zero { color: var(--good-text); }
+#tGuard .g-p td.neg { color: var(--s1); }
 .name-cell { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .name-cell span.nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dtitle { font-size: 13.5px; font-weight: 600; margin-bottom: 10px; display: flex;
@@ -251,9 +255,8 @@ tfoot tr:hover td { background: none; }
       </div>
       <div class="layout">
         <div>
-          <div class="treehead">公司 × 货号（点击行看右侧网点明细）</div>
-          <div class="tblwrap"><table id="tGuard"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
-          <div class="pager" id="gPager"></div>
+          <div class="treehead">公司 / 货号（▶ 展开货号，点击货号行看右侧网点明细）</div>
+          <div class="tblwrap" style="max-height:64vh;overflow-y:auto"><table id="tGuard"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
           <div class="note">规则：公司所有在营专卖店的伯俊库存总和 ≤ 该公司<b>每一个</b>启用网点的京东可用库存（未上架视为不足）。客户名与网点经销商精确匹配，对不上的经销商不参与核对。</div>
         </div>
         <div>
@@ -683,48 +686,68 @@ upDlg.querySelectorAll('button[data-kind]').forEach(btn => {
   };
 });
 
-/* ---- 网点保障 Tab ----
+/* ---- 网点保障 Tab（公司 ▶ 货号 两级树） ----
    outletGuard 行: [0]客户 [1]货号 [2]品名 [3]线下总和 [4]网点数 [5]达标数 [6]最小网点库存 [7]最大缺口 */
-const G_PAGE = 100;
-let gPage = 0, gSel = null;
+let gSel = null;
+const gOpen = new Set();          // 展开的公司
 const GCOLS = [
-  ['客户', '公司（feishu 专卖店客户名，与京东网点经销商精确匹配）'],
-  ['货号', '伯俊货号'],
-  ['品名', ''],
-  ['线下总和', '该公司所有在营专卖店的伯俊库存合计（>0 的货号才参与核对）'],
+  ['客户 / 货号', '一级为公司（与京东网点经销商精确匹配），▶ 展开显示货号'],
+  ['品名', '公司行显示货号统计'],
+  ['线下总和', '该公司所有在营专卖店的伯俊库存合计（>0 的货号才参与核对）；公司行为各货号合计'],
   ['网点数', '该公司门店状态=启用的京东网点数'],
-  ['达标网点', '京东可用库存 ≥ 线下总和 的网点数'],
+  ['达标网点', '京东可用库存 ≥ 线下总和 的网点数（公司行为达标货号数/货号数）'],
   ['最小网点库存', '所有网点中最低的京东可用库存（未上架按 0 计）'],
   ['最大缺口', 'min(网点库存 − 线下总和)，负数越大缺口越严重'],
 ];
-function renderGuard() {
+function guardTree() {
   const kw = el('gKw').value.trim().toLowerCase();
   const onlyBad = el('gOnlyBad').checked;
-  let rows = DATA.outletGuard.filter(r =>
+  const rows = DATA.outletGuard.filter(r =>
     (!onlyBad || r[5] < r[4]) &&
     (!kw || [r[0], r[1], r[2]].some(v => String(v ?? '').toLowerCase().includes(kw))));
-  const pages = Math.max(1, Math.ceil(rows.length / G_PAGE));
-  gPage = Math.min(gPage, pages - 1);
-  const slice = rows.slice(gPage * G_PAGE, gPage * G_PAGE + G_PAGE);
+  const m = new Map();
+  for (const r of rows) {
+    let c = m.get(r[0]);
+    if (!c) m.set(r[0], c = { name: r[0], outletCnt: r[4], prods: [],
+                              offlineSum: 0, badProds: 0, worst: 0 });
+    c.prods.push(r);
+    c.offlineSum += r[3];
+    if (r[5] < r[4]) c.badProds++;
+    c.worst = Math.min(c.worst, r[7]);
+  }
+  const custs = [...m.values()].sort((a, b) => a.worst - b.worst);
+  custs.forEach(c => c.prods.sort((a, b) => a[7] - b[7]));
+  return { custs, shown: rows.length };
+}
+function renderGuard() {
+  const kw = el('gKw').value.trim();
+  const { custs, shown } = guardTree();
   el('tGuard').tHead.innerHTML = '<tr>' + GCOLS.map((c, i) =>
-    `<th class="${i >= 3 ? 'num' : ''}">${c[0]}${c[1] ? `<span class="help" data-tip="<b>${c[0]}</b>${c[1]}">?</span>` : ''}</th>`).join('') + '</tr>';
-  el('tGuard').tBodies[0].innerHTML = slice.map(r => {
-    const bad = r[5] < r[4];
-        return `<tr data-c="${esc(r[0])}" data-p="${esc(r[1])}" style="cursor:pointer" class="${gSel === r[0] + '|' + r[1] ? 'sel' : ''}">
-      <td title="${esc(r[0])}">${esc(r[0])}</td><td>${esc(r[1])}</td>
-      <td title="${esc(r[2])}">${esc((r[2] || '').slice(0, 16))}</td>
-      <td class="num">${fmt(r[3])}</td><td class="num">${fmt(r[4])}</td>
-      <td class="num ${bad ? 'pos' : 'zero'}">${fmt(r[5])}/${fmt(r[4])}</td>
-      <td class="num">${fmt(r[6])}</td>${diffCell(r[7])}</tr>`;
+    `<th class="${i >= 2 ? 'num' : ''}">${c[0]}${c[1] ? `<span class="help" data-tip="<b>${c[0]}</b>${c[1]}">?</span>` : ''}</th>`).join('') + '</tr>';
+  el('tGuard').tBodies[0].innerHTML = custs.map(c => {
+    const open = !!kw || gOpen.has(c.name);      // 搜索时自动展开
+    return `<tr class="g-c ${open ? 'open' : ''}" data-c="${esc(c.name)}" style="cursor:pointer">
+      <td><span class="name-cell"><span class="exp">▶</span><span class="nm" title="${esc(c.name)}">${esc(c.name)}</span></span></td>
+      <td class="num" style="white-space:nowrap">${fmt(c.prods.length)} 个货号</td>
+      <td class="num">${fmt(c.offlineSum)}</td>
+      <td class="num">${fmt(c.outletCnt)}</td>
+      <td class="num ${c.badProds ? 'pos' : 'zero'}">${fmt(c.prods.length - c.badProds)}/${fmt(c.prods.length)}</td>
+      <td class="num"></td>${diffCell(c.worst)}</tr>` +
+    (open ? c.prods.map(r => {
+      const bad = r[5] < r[4];
+      return `<tr class="g-p ${gSel === r[0] + '|' + r[1] ? 'sel' : ''}" data-c="${esc(r[0])}" data-p="${esc(r[1])}" style="cursor:pointer">
+        <td style="padding-left:34px" title="${esc(r[2])}">${esc(r[1])}</td>
+        <td title="${esc(r[2])}">${esc((r[2] || '').slice(0, 14))}</td>
+        <td class="num">${fmt(r[3])}</td>
+        <td class="num">${fmt(r[4])}</td>
+        <td class="num ${bad ? 'pos' : 'zero'}">${fmt(r[5])}/${fmt(r[4])}</td>
+        <td class="num">${fmt(r[6])}</td>${diffCell(r[7])}</tr>`;
+    }).join('') : '');
   }).join('');
   const bad = DATA.outletGuard.filter(r => r[5] < r[4]).length;
-  el('tGuard').tFoot.innerHTML = `<tr><td colspan="4">共 ${fmt(DATA.outletGuard.length)} 个公司×货号，不达标 ${fmt(bad)} 个</td>
-    <td colspan="4" class="num">当前筛选 ${fmt(rows.length)} 个</td></tr>`;
-  el('gPager').innerHTML = `<button id="gPv" ${gPage ? '' : 'disabled'}>上一页</button>
-    <span>第 ${gPage + 1} / ${pages} 页</span>
-    <button id="gNx" ${gPage < pages - 1 ? '' : 'disabled'}>下一页</button>`;
-  el('gPv').onclick = () => { gPage--; renderGuard(); };
-  el('gNx').onclick = () => { gPage++; renderGuard(); };
+  el('tGuard').tFoot.innerHTML = `<tr>
+    <td colspan="3">共 ${fmt(new Set(DATA.outletGuard.map(r => r[0])).size)} 家公司 · ${fmt(DATA.outletGuard.length)} 个货号项（不达标 ${fmt(bad)}）</td>
+    <td colspan="4" class="num">当前筛选 ${fmt(custs.length)} 家 / ${fmt(shown)} 项</td></tr>`;
 }
 async function loadGuardDetail(cust, prod) {
   el('gTitle').textContent = `${cust} · ${prod} 加载中…`;
@@ -733,7 +756,11 @@ async function loadGuardDetail(cust, prod) {
     if (res.status === 401) { location.reload(); return; }
     const j = await res.json();
     const sum = DATA.outletGuard.find(r => r[0] === cust && r[1] === prod);
-    el('gTitle').textContent = `${cust} · ${prod}（线下总和 ${fmt(sum ? sum[3] : '')}，网点需 ≥ 此数）`;
+    const total = j.rows.length, ok = j.rows.filter(r => r[4]).length;
+    const unlisted = j.rows.filter(r => r[2] === null).length;
+    el('gTitle').innerHTML = `${esc(cust)} · ${esc(prod)}　线下总和 <b>${fmt(sum ? sum[3] : '')}</b>，网点需 ≥ 此数 ｜ ` +
+      `共 <b>${fmt(total)}</b> 个网点：<span class="zero">达标 ${fmt(ok)}</span> · ` +
+      `<span class="pos">不足 ${fmt(total - ok)}</span>${unlisted ? `（含未上架 ${fmt(unlisted)}）` : ''}`;
     el('tGuardDet').innerHTML = '<thead><tr><th>网点</th><th>门店编号</th><th class="num">京东库存</th><th class="num">缺口</th><th>状态</th></tr></thead><tbody>' +
       j.rows.map(r => `<tr>
         <td title="${esc(r[0])}">${esc(r[0])}</td><td>${esc(r[1])}</td>
@@ -746,12 +773,18 @@ async function loadGuardDetail(cust, prod) {
 }
 el('tGuard').onclick = e => {
   const tr = e.target.closest('tbody tr'); if (!tr) return;
-  gSel = tr.dataset.c + '|' + tr.dataset.p;
+  if (tr.classList.contains('g-c')) {           // 公司行：展开/收起
+    const name = tr.dataset.c;
+    gOpen.has(name) ? gOpen.delete(name) : gOpen.add(name);
+    renderGuard();
+    return;
+  }
+  gSel = tr.dataset.c + '|' + tr.dataset.p;     // 货号行：选中 + 加载网点明细
   renderGuard();
   loadGuardDetail(tr.dataset.c, tr.dataset.p);
 };
-el('gKw').oninput = () => { gPage = 0; renderGuard(); };
-el('gOnlyBad').onchange = () => { gPage = 0; renderGuard(); };
+el('gKw').oninput = renderGuard;
+el('gOnlyBad').onchange = renderGuard;
 renderGuard();
 
 /* ---- 门店映射管理（设置） ---- */
