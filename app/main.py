@@ -19,7 +19,9 @@ from fastapi import FastAPI, Request, Form, Response, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import auth
+import secrets
+
+from . import auth, feishu
 from .config import settings, TEMPLATE_DIR
 from .services import recon, excel, etl_runner, mapping
 
@@ -35,9 +37,23 @@ def _template(name: str) -> str:
 
 
 def _login_page(err: str = '') -> HTMLResponse:
-    html = _template('login.html').replace(
-        '{ERR}', f'<div class="err">{err}</div>' if err else '')
+    feishu_btn = ('<div class="divider">或</div>'
+                  '<a class="feishu" href="feishu/login">'
+                  '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">'
+                  '<path d="M4 5h13l-2.5 4H6.5L4 5zm0 6h11l-2.5 4H6.5L4 11zm0 6h9l-2.5 4H6.5L4 17z"/></svg>'
+                  '飞书登录</a>') if feishu.enabled() else ''
+    html = (_template('login.html')
+            .replace('{ERR}', f'<div class="err">{err}</div>' if err else '')
+            .replace('{FEISHU}', feishu_btn))
     return HTMLResponse(html, headers={'Cache-Control': 'no-store'})
+
+
+def _set_session_redirect(to: str = '/'):
+    token = auth.create_session()
+    resp = RedirectResponse(to, status_code=302)
+    resp.set_cookie(auth.COOKIE_NAME, token, max_age=settings.session_ttl,
+                    httponly=True, samesite='lax', path='/')
+    return resp
 
 
 def _not_modified(request: Request, etag: str):
@@ -59,11 +75,7 @@ async def index(request: Request):
 @app.post('/login')
 async def login(request: Request, u: str = Form(''), p: str = Form('')):
     if auth.verify_credentials(u, p):
-        token = auth.create_session()
-        resp = RedirectResponse('/', status_code=302)
-        resp.set_cookie(auth.COOKIE_NAME, token, max_age=settings.session_ttl,
-                        httponly=True, samesite='lax', path='/')
-        return resp
+        return _set_session_redirect('/')
     await asyncio.sleep(1)          # 减缓暴力尝试
     return _login_page('账号或密码不正确')
 
@@ -73,6 +85,36 @@ async def logout(request: Request):
     auth.destroy_session(request.cookies.get(auth.COOKIE_NAME))
     resp = RedirectResponse('/', status_code=302)
     resp.delete_cookie(auth.COOKIE_NAME, path='/')
+    return resp
+
+
+# ---------- 飞书网页登录 ----------
+
+def _redirect_uri(request: Request) -> str:
+    # base_url 形如 http://120.79.214.225:8061/，回调路径须与飞书后台白名单一致
+    return str(request.base_url).rstrip('/') + '/feishu/callback'
+
+
+@app.get('/feishu/login')
+async def feishu_login(request: Request):
+    if not feishu.enabled():
+        return _login_page('未配置飞书登录')
+    state = secrets.token_hex(8)
+    resp = RedirectResponse(feishu.authorize_url(_redirect_uri(request), state), status_code=302)
+    resp.set_cookie('fs_state', state, max_age=600, httponly=True, samesite='lax', path='/')
+    return resp
+
+
+@app.get('/feishu/callback')
+async def feishu_callback(request: Request, code: str = '', state: str = ''):
+    if not code or not state or state != request.cookies.get('fs_state'):
+        return _login_page('飞书登录校验失败，请重试')
+    try:
+        info = await asyncio.to_thread(feishu.exchange_user_info, code, _redirect_uri(request))
+    except Exception as e:      # noqa: BLE001
+        return _login_page(f'飞书登录失败：{e}')
+    resp = _set_session_redirect('/')
+    resp.delete_cookie('fs_state', path='/')
     return resp
 
 

@@ -42,6 +42,8 @@ def destroy_session(token: Optional[str]) -> None:
 
 
 def is_authed(request: Request) -> bool:
+    if settings.dev_no_auth:          # 本地开发免登录
+        return True
     token = request.cookies.get(COOKIE_NAME) or ''
     parts = token.rsplit('.', 1)
     if len(parts) != 2:

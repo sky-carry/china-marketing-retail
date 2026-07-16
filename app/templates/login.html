@@ -36,17 +36,29 @@ button { width:100%; margin-top:22px; background:var(--s1); color:#fff; border:n
 button:hover { filter:brightness(1.08); }
 .err { background:color-mix(in srgb, var(--crit) 12%, transparent); color:var(--crit);
   border-radius:8px; padding:8px 12px; font-size:13px; margin-top:16px; }
+.divider { display:flex; align-items:center; gap:10px; color:var(--ink3);
+  font-size:12px; margin:18px 0 4px; }
+.divider::before, .divider::after { content:""; flex:1; height:1px; background:var(--grid); }
+.feishu { display:flex; align-items:center; justify-content:center; gap:8px;
+  margin-top:12px; padding:10px; border:1px solid var(--grid); border-radius:8px;
+  color:var(--ink); text-decoration:none; font-size:14px; font-weight:600;
+  background:var(--page); }
+.feishu:hover { border-color:var(--s1); color:var(--s1); }
+.feishu svg { color:#3370ff; }
 </style></head><body>
-<form class="card" method="post" action="/login">
+<div class="card">
   <div class="logo">
     <svg width="34" height="34" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#2a78d6"/><path d="M14 24h14M14 32h10" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".55"/><path d="M26 42l9 9 16-18" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
     <h1>库存核对看板</h1>
   </div>
   <div class="sub">伯俊 vs 京东秒送 / 美团闪购</div>
-  <label>账号</label>
-  <input name="u" autocomplete="username" autofocus required>
-  <label>密码</label>
-  <input name="p" type="password" autocomplete="current-password" required>
-  {ERR}
-  <button>登 录</button>
-</form></body></html>
+  <form method="post" action="/login">
+    <label>账号</label>
+    <input name="u" autocomplete="username" autofocus required>
+    <label>密码</label>
+    <input name="p" type="password" autocomplete="current-password" required>
+    {ERR}
+    <button>登 录</button>
+  </form>
+  {FEISHU}
+</div></body></html>

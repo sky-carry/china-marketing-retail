@@ -28,6 +28,12 @@ class Settings:
     username: str = os.getenv('DASH_USER', 'admin')
     password: str = os.getenv('DASH_PASSWORD', 'change-me')
     session_ttl: int = int(os.getenv('DASH_SESSION_TTL', str(12 * 3600)))   # 秒
+    # 本地开发免登录：.env 设 DEV_NO_AUTH=1 时任何请求都视为已登录（切勿在生产开启）
+    dev_no_auth: bool = os.getenv('DEV_NO_AUTH', '').lower() in ('1', 'true', 'yes')
+
+    # 飞书网页登录（OAuth 授权码流程）
+    feishu_app_id: str = os.getenv('FEISHU_APP_ID', '')
+    feishu_app_secret: str = os.getenv('FEISHU_APP_SECRET', '')
 
     # 数据缓存
     cache_ttl: int = int(os.getenv('DASH_CACHE_TTL', '60'))                 # 秒
