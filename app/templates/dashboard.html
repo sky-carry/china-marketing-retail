@@ -184,13 +184,11 @@ tfoot tr:hover td { background: none; }
 .exp { display: inline-block; width: 16px; color: var(--ink-3); font-size: 10px;
   transition: transform .12s; }
 .c-row.open .exp, .g-c.open .exp { transform: rotate(90deg); }
-/* 网点保障：左右面板比例与列宽控制，避免横向滚动条 */
-#p-guard .layout { grid-template-columns: minmax(520px, 13fr) 11fr; }
-#tGuard td { white-space: nowrap; }
-#tGuard td:first-child { max-width: 175px; overflow: hidden; text-overflow: ellipsis; }
-#tGuard td.gnm { max-width: 165px; overflow: hidden; text-overflow: ellipsis; }
+/* 网点保障：左右各占一半；品名列拉宽、自然换行（最多约两行） */
+#p-guard .layout { grid-template-columns: 1fr 1fr; }
+#tGuard td.gnm { min-width: 200px; }
 #tGuardDet td { white-space: nowrap; }
-#tGuardDet td:first-child { max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
+#tGuardDet td:first-child { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 #tGuard .g-c td { font-weight: 600; }
 #tGuard .g-p td { font-weight: 400; color: var(--ink-2); }
 #tGuard .g-p td.pos { color: var(--crit); } #tGuard .g-p td.zero { color: var(--good-text); }
