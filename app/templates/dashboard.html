@@ -184,6 +184,8 @@ tfoot tr:hover td { background: none; }
 .exp { display: inline-block; width: 16px; color: var(--ink-3); font-size: 10px;
   transition: transform .12s; }
 .c-row.open .exp, .g-c.open .exp { transform: rotate(90deg); }
+#tGuard td { white-space: nowrap; }
+#tGuard td.gnm { max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
 #tGuard .g-c td { font-weight: 600; }
 #tGuard .g-p td { font-weight: 400; color: var(--ink-2); }
 #tGuard .g-p td.pos { color: var(--crit); } #tGuard .g-p td.zero { color: var(--good-text); }
@@ -736,8 +738,8 @@ function renderGuard() {
     (open ? c.prods.map(r => {
       const bad = r[5] < r[4];
       return `<tr class="g-p ${gSel === r[0] + '|' + r[1] ? 'sel' : ''}" data-c="${esc(r[0])}" data-p="${esc(r[1])}" style="cursor:pointer">
-        <td style="padding-left:34px" title="${esc(r[2])}">${esc(r[1])}</td>
-        <td title="${esc(r[2])}">${esc((r[2] || '').slice(0, 14))}</td>
+        <td style="padding-left:34px">${esc(r[1])}</td>
+        <td class="gnm" title="${esc(r[2])}">${esc(r[2] || '')}</td>
         <td class="num">${fmt(r[3])}</td>
         <td class="num">${fmt(r[4])}</td>
         <td class="num ${bad ? 'pos' : 'zero'}">${fmt(r[5])}/${fmt(r[4])}</td>
