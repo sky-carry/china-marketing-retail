@@ -187,3 +187,50 @@ FROM v_recon_detail
 GROUP BY customer_name;
 
 COMMENT ON VIEW v_recon_customer_summary IS '客户（公司）级汇总：门店数/行数/一致数/分平台一致数；合格率 = match_cnt / checkable_cnt';
+
+-- ============ 6. 网点库存保障 ============
+-- 规则（用户确认 A 口径）：公司所有在营专卖店的伯俊库存总和（按货号），
+-- 应 ≤ 该公司【每一个】启用状态京东网点在京东的可用库存；未上架视为不足。
+-- 关联：feishu_store_mapping.customer_name = feishu_jd_outlet.dealer（精确匹配，
+-- 对不上的经销商（如"鼎信"、脏数据"379102"、无线下店的中免）自然排除。
+CREATE OR REPLACE VIEW v_outlet_guard AS
+WITH offline AS (
+  SELECT s.customer_name, b.product_code,
+         max(b.product_name) AS product_name,
+         sum(b.stock_qty)    AS offline_qty
+  FROM v_dim_store s
+  JOIN bojun_offline_inventory b ON b.store_warehouse = s.bojun_warehouse
+  WHERE s.is_active
+  GROUP BY 1, 2
+  HAVING sum(b.stock_qty) > 0
+)
+SELECT o.customer_name,
+       o.product_code,
+       o.product_name,
+       o.offline_qty,                                   -- 线下专卖店伯俊库存总和
+       ot.store_code  AS outlet_code,
+       ot.store_name  AS outlet_name,
+       jsi.available_stock AS outlet_qty,               -- NULL = 网点未上架该货号
+       COALESCE(jsi.available_stock, 0) - o.offline_qty AS gap,
+       COALESCE(jsi.available_stock >= o.offline_qty, false) AS is_ok
+FROM offline o
+JOIN feishu_jd_outlet ot
+  ON ot.dealer = o.customer_name AND ot.store_status = '启用'
+LEFT JOIN jd_store_inventory jsi
+  ON jsi.store_code = ot.store_code
+ AND jsi.merchant_product_code = o.product_code;
+
+COMMENT ON VIEW v_outlet_guard IS '网点库存保障明细：公司×货号×启用网点，网点京东可用库存应≥公司线下伯俊总和（A口径），outlet_qty NULL=未上架';
+
+CREATE OR REPLACE VIEW v_outlet_guard_summary AS
+SELECT customer_name, product_code,
+       max(product_name)  AS product_name,
+       max(offline_qty)   AS offline_qty,
+       count(*)           AS outlet_cnt,
+       count(*) FILTER (WHERE is_ok) AS ok_cnt,
+       min(COALESCE(outlet_qty, 0)) AS min_outlet_qty,
+       min(gap)           AS worst_gap
+FROM v_outlet_guard
+GROUP BY 1, 2;
+
+COMMENT ON VIEW v_outlet_guard_summary IS '网点库存保障汇总：公司×货号，达标网点数/最小网点库存/最大缺口';

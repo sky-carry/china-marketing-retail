@@ -140,6 +140,14 @@ async def etl_status(request: Request):
     return etl_runner.status()
 
 
+@app.get('/api/outlet_guard')
+async def outlet_guard_detail(request: Request, customer: str, product: str):
+    if not auth.is_authed(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    rows = await asyncio.to_thread(recon.fetch_outlet_detail, customer, product)
+    return {'rows': rows}
+
+
 @app.get('/api/upload/history')
 async def upload_history(request: Request):
     if not auth.is_authed(request):

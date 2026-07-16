@@ -50,6 +50,14 @@ def fetch_payload() -> dict:
             FROM v_product_unmatched ORDER BY platform, store_cnt DESC""")
         un_products = [[r[0], r[1], r[2], r[3], int(r[4]), _int(r[5])] for r in cur.fetchall()]
 
+        cur.execute("""
+            SELECT customer_name, product_code, product_name, offline_qty,
+                   outlet_cnt, ok_cnt, min_outlet_qty, worst_gap
+            FROM v_outlet_guard_summary
+            ORDER BY worst_gap, customer_name, product_code""")
+        outlet_guard = [[r[0], r[1], r[2], _int(r[3]), r[4], r[5], _int(r[6]), _int(r[7])]
+                        for r in cur.fetchall()]
+
         cur.execute("SELECT count(*) FROM v_dim_store WHERE NOT is_active")
         inactive = cur.fetchone()[0]
 
@@ -62,7 +70,20 @@ def fetch_payload() -> dict:
 
     ts = (loaded_at or datetime.datetime.now()).strftime('%Y-%m-%d %H:%M')
     return {'meta': {'generated_at': ts, 'flags': FLAGS, 'inactive': inactive},
-            'detail': detail, 'unStores': un_stores, 'unProducts': un_products}
+            'detail': detail, 'unStores': un_stores, 'unProducts': un_products,
+            'outletGuard': outlet_guard}
+
+
+def fetch_outlet_detail(customer: str, product: str) -> list:
+    """某公司×货号在每个启用网点的库存明细（网点保障 Tab 点击行按需加载）。"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT outlet_name, outlet_code, outlet_qty, gap, is_ok
+            FROM v_outlet_guard
+            WHERE customer_name = %s AND product_code = %s
+            ORDER BY COALESCE(outlet_qty, -1), outlet_name""", (customer, product))
+        return [[r[0], r[1], _int(r[2]), _int(r[3]), r[4]] for r in cur.fetchall()]
 
 
 # ---- 缓存层：payload 序列化结果 + ETag，跟随 cache_ttl 失效 ----

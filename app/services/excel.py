@@ -64,6 +64,13 @@ def build_xlsx() -> bytes:
                                        r[7], _maintain_rate(r[5], r[4]),
                                        r[8], _maintain_rate(r[6], r[4]), r[9]]
                                       for r in rows))
+        sheet('网点保障汇总',
+              ['客户名称', '货号', '品名', '线下伯俊总和', '启用网点数', '达标网点数',
+               '最小网点库存', '最大缺口'],
+              """SELECT customer_name, product_code, product_name, offline_qty,
+                        outlet_cnt, ok_cnt, min_outlet_qty, worst_gap
+                 FROM v_outlet_guard_summary
+                 ORDER BY worst_gap, customer_name, product_code""")
         sheet('未匹配门店',
               ['门店名称', '伯俊店仓名(待修正)', '省份', '城市', '京东ID', '美团ID'],
               """SELECT store_name, bojun_warehouse, province, city, jd_id, meituan_id
