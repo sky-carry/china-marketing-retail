@@ -170,6 +170,14 @@ dialog#upDlg::backdrop { background: rgba(0,0,0,.45); }
 .setview-head .settabs { border-bottom: none; margin-bottom: 0; }
 .setview-head .btn { width: auto; padding: 6px 14px; font-size: 12.5px; flex: none; }
 #setView .mapwrap { max-height: calc(100vh - 200px); }
+/* 数据管理视图打开时：锁定为一屏高，去掉页面级横竖滚动条，只让表格内部滚动 */
+body.cfg-open { overflow: hidden; }
+body.cfg-open .wrap { height: 100vh; box-sizing: border-box; padding-bottom: 14px;
+  display: flex; flex-direction: column; }
+body.cfg-open .hdr { flex: none; }
+body.cfg-open #setView { flex: 1; min-height: 0; display: flex; flex-direction: column;
+  padding-bottom: 0; }
+body.cfg-open #setView .mapwrap { flex: 1; min-height: 0; max-height: none; }
 /* 用户管理对话框 */
 dialog#usrDlg { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
   margin: 0; max-height: 92vh; overflow-y: auto; border: 1px solid var(--border);
@@ -1042,12 +1050,13 @@ el('setTabs').onclick = e => {
 };
 el('btnSettings').onclick = () => {
   dashMain.hidden = true; setView.hidden = false;
-  window.scrollTo(0, 0);
+  document.body.classList.add('cfg-open');
   loadTable(curKey);
 };
 el('setBack').onclick = () => {
   if (mapChanged) { location.reload(); return; }
   setView.hidden = true; dashMain.hidden = false;
+  document.body.classList.remove('cfg-open');
 };
 el('mapKw').oninput = renderMap;
 el('mapExport').onclick = () => { location.href = 'api/table/' + curKey + '/export'; };
