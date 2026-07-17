@@ -319,7 +319,7 @@ tfoot tr:hover td { background: none; }
     <div class="uphist">
       <h4>上传历史（最近 20 次）</h4>
       <div class="tblwrap" style="max-height:180px;overflow-y:auto">
-        <table id="tHist"><thead><tr><th>时间</th><th>数据</th><th>文件名</th><th>结果</th><th>说明</th></tr></thead><tbody></tbody></table>
+        <table id="tHist"><thead><tr><th>时间</th><th>数据</th><th>文件名</th><th>操作人</th><th>结果</th><th>说明</th></tr></thead><tbody></tbody></table>
       </div>
     </div>
   </div>
@@ -662,9 +662,10 @@ async function loadHistory() {
     const j = await res.json();
     el('tHist').tBodies[0].innerHTML = (j.rows || []).map(r => `<tr>
       <td>${r.time}</td><td>${esc(r.label)}</td><td title="${esc(r.filename)}">${esc((r.filename||'').slice(0,30))}</td>
+      <td>${esc(r.operator || '')}</td>
       <td class="${r.state === 'success' ? 'ok' : 'err'}">${r.state === 'success' ? '成功' : '失败'}</td>
       <td class="msg">${esc(r.message)}</td></tr>`).join('') ||
-      '<tr><td colspan="5" style="color:var(--ink-3)">暂无记录</td></tr>';
+      '<tr><td colspan="6" style="color:var(--ink-3)">暂无记录</td></tr>';
   } catch {}
 }
 

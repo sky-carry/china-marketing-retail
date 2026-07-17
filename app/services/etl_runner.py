@@ -67,7 +67,7 @@ def build_template(kind: str) -> bytes:
 _lock = threading.Lock()
 _state = {
     'state': 'idle',          # idle | running | success | error
-    'kind': '', 'label': '', 'filename': '', 'size': 0,
+    'kind': '', 'label': '', 'filename': '', 'size': 0, 'operator': '',
     'started_at': 0.0, 'finished_at': 0.0,
     'log': '',
 }
@@ -85,17 +85,19 @@ def _ensure_log_table(cur):
         state text NOT NULL,
         message text
     )""")
+    cur.execute('ALTER TABLE upload_log ADD COLUMN IF NOT EXISTS operator text')
 
 
-def add_log(label: str, filename: str, size: int, state: str, message: str) -> None:
+def add_log(label: str, filename: str, size: int, state: str, message: str,
+            operator: str = '') -> None:
     try:
         with get_conn() as conn:
             cur = conn.cursor()
             _ensure_log_table(cur)
             cur.execute(
-                'INSERT INTO upload_log (label, filename, size_bytes, state, message) '
-                'VALUES (%s, %s, %s, %s, %s)',
-                (label, filename, size, state, (message or '')[:500]))
+                'INSERT INTO upload_log (label, filename, size_bytes, state, message, operator) '
+                'VALUES (%s, %s, %s, %s, %s, %s)',
+                (label, filename, size, state, (message or '')[:500], operator or None))
             conn.commit()
     except Exception:            # noqa: BLE001 —— 历史记录失败不影响主流程
         pass
@@ -107,9 +109,9 @@ def history(limit: int = 20) -> list:
         _ensure_log_table(cur)
         conn.commit()
         cur.execute("""SELECT to_char(created_at, 'YYYY-MM-DD HH24:MI'), label, filename,
-                              size_bytes, state, message
+                              size_bytes, state, message, operator
                        FROM upload_log ORDER BY id DESC LIMIT %s""", (limit,))
-        return [dict(zip(('time', 'label', 'filename', 'size', 'state', 'message'), r))
+        return [dict(zip(('time', 'label', 'filename', 'size', 'state', 'message', 'operator'), r))
                 for r in cur.fetchall()]
 
 
@@ -150,13 +152,13 @@ def save_upload(kind: str, content: bytes) -> str:
     ) from last_err
 
 
-def start_etl(kind: str, filename: str = '', size: int = 0) -> bool:
+def start_etl(kind: str, filename: str = '', size: int = 0, operator: str = '') -> bool:
     """启动后台 ETL；已有任务在跑时返回 False。"""
     with _lock:
         if _state['state'] == 'running':
             return False
         _state.update(state='running', kind=kind, label=UPLOAD_KINDS[kind][2],
-                      filename=filename, size=size,
+                      filename=filename, size=size, operator=operator,
                       started_at=time.time(), finished_at=0.0, log='')
     threading.Thread(target=_run, args=(kind,), daemon=True).start()
     return True
@@ -194,7 +196,8 @@ def _run(kind: str):
                 _state['log'] = '\n'.join(lines[-15:])
     with _lock:
         _state.update(state='success' if ok else 'error', finished_at=time.time())
-        label, fname, size = _state['label'], _state['filename'], _state['size']
+        label, fname, size, operator = (_state['label'], _state['filename'],
+                                        _state['size'], _state['operator'])
     # 写入上传历史：成功记入库行数，失败记错误原因
     text = '\n'.join(lines)
     if ok:

@@ -23,7 +23,7 @@ import secrets
 
 from . import auth, feishu
 from .config import settings, TEMPLATE_DIR
-from .services import recon, excel, etl_runner, tables
+from .services import recon, excel, etl_runner, tables, users
 
 MAX_UPLOAD = 100 * 1024 * 1024   # 单文件上限 100MB
 
@@ -48,12 +48,24 @@ def _login_page(err: str = '') -> HTMLResponse:
     return HTMLResponse(html, headers={'Cache-Control': 'no-store'})
 
 
-def _set_session_redirect(to: str = '/'):
-    token = auth.create_session()
+def _set_session_redirect(to: str = '/', subject: str = ''):
+    token = auth.create_session(subject)
     resp = RedirectResponse(to, status_code=302)
     resp.set_cookie(auth.COOKIE_NAME, token, max_age=settings.session_ttl,
                     httponly=True, samesite='lax', path='/')
     return resp
+
+
+def _current_user_name(request: Request) -> str:
+    """当前登录者显示名（操作记录用）：飞书查 users 表姓名；密码登录=用户名；dev='本地开发'。"""
+    sub = auth.session_subject(request)
+    if not sub:
+        return ''
+    if sub == 'dev':
+        return '本地开发'
+    if sub.startswith('ou_'):          # 飞书 open_id
+        return users.display_name(sub)
+    return sub                          # 账号密码登录：subject 就是用户名
 
 
 def _not_modified(request: Request, etag: str):
@@ -75,7 +87,7 @@ async def index(request: Request):
 @app.post('/login')
 async def login(request: Request, u: str = Form(''), p: str = Form('')):
     if auth.verify_credentials(u, p):
-        return _set_session_redirect('/')
+        return _set_session_redirect('/', subject=u)
     await asyncio.sleep(1)          # 减缓暴力尝试
     return _login_page('账号或密码不正确')
 
@@ -116,9 +128,25 @@ async def feishu_callback(request: Request, code: str = '', state: str = ''):
         info = await asyncio.to_thread(feishu.exchange_user_info, code, _redirect_uri(request))
     except Exception as e:      # noqa: BLE001
         return _login_page(f'飞书登录失败：{e}')
-    resp = _set_session_redirect('/')
+    user = await asyncio.to_thread(users.upsert_login, info)   # 落库/更新用户
+    if user and not user.get('is_active'):
+        return _login_page('该账号已被禁用，请联系管理员')
+    resp = _set_session_redirect('/', subject=info.get('open_id') or info.get('name') or '')
     resp.delete_cookie('fs_state', path='/')
     return resp
+
+
+@app.get('/api/me')
+async def api_me(request: Request):
+    if not auth.is_authed(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    sub = auth.session_subject(request)
+    user = None
+    if sub and sub.startswith('ou_'):
+        user = await asyncio.to_thread(users.get_by_open_id, sub)
+    if not user:                       # 账号密码 / dev / 查不到
+        user = {'name': _current_user_name(request), 'source': 'dev' if sub == 'dev' else 'password'}
+    return {'ok': True, 'user': user}
 
 
 # ---------- 数据接口 ----------
@@ -178,7 +206,8 @@ async def upload(request: Request, kind: str = Form(...), file: UploadFile = Fil
         await asyncio.to_thread(etl_runner.save_upload, kind, content)
     except RuntimeError as e:
         return JSONResponse({'error': str(e)}, status_code=409)
-    if not etl_runner.start_etl(kind, filename=file.filename or '', size=len(content)):
+    if not etl_runner.start_etl(kind, filename=file.filename or '', size=len(content),
+                                operator=_current_user_name(request)):
         return JSONResponse({'error': '已有入库任务在执行，请稍候'}, status_code=409)
     return {'ok': True, 'kind': kind, 'size': len(content)}
 
@@ -328,14 +357,15 @@ async def table_import(request: Request, key: str, file: UploadFile = File(...))
     content = await file.read()
     if len(content) > MAX_UPLOAD:
         return JSONResponse({'error': '文件超过 100MB 上限'}, status_code=400)
+    operator = _current_user_name(request)
     try:
         result = await asyncio.to_thread(mgr.import_xlsx, content)
     except ValueError as e:
         etl_runner.add_log(f'{mgr.title}导入', file.filename or '', len(content),
-                           'error', f'失败: {e}')
+                           'error', f'失败: {e}', operator=operator)
         return JSONResponse({'error': str(e)}, status_code=400)
     etl_runner.add_log(f'{mgr.title}导入', file.filename or '', len(content),
-                       'success', f"导入 {result['inserted']} 行")
+                       'success', f"导入 {result['inserted']} 行", operator=operator)
     return {'ok': True, **result}
 
 
