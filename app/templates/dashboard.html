@@ -43,6 +43,14 @@ body { background: var(--page); color: var(--ink-1);
 h1 { font-size: 20px; font-weight: 650; }
 .hdr { display: flex; align-items: center; gap: 12px; }
 .hdr h1 { flex: 1; min-width: 0; }
+.me { flex: none; display: none; align-items: center; gap: 8px; font-size: 12.5px;
+  color: var(--ink-2); }
+.me img, .me .av { width: 26px; height: 26px; border-radius: 50%; flex: none;
+  object-fit: cover; background: var(--s1); color: #fff; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; font-weight: 600; }
+.me .nm { white-space: nowrap; }
+.me .badge { font-size: 10.5px; color: var(--s1); border: 1px solid var(--s1);
+  border-radius: 5px; padding: 1px 5px; }
 .logout { flex: none; color: var(--ink-2); font-size: 12.5px; text-decoration: none;
   border: 1px solid var(--grid); border-radius: 7px; padding: 5px 12px;
   background: var(--surface-1); }
@@ -148,6 +156,27 @@ dialog#setDlg::backdrop { background: rgba(0,0,0,.45); }
 #tMap .op a.del { color: var(--crit); }
 .setstatus { font-size: 12.5px; margin-top: 8px; min-height: 18px; }
 .setstatus .ok { color: var(--good-text); } .setstatus .err { color: var(--crit); }
+/* 用户管理对话框 */
+dialog#usrDlg { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  margin: 0; max-height: 92vh; overflow-y: auto; border: 1px solid var(--border);
+  border-radius: 12px; padding: 0; background: var(--surface-1); color: var(--ink-1);
+  width: min(1000px, 96vw); }
+dialog#usrDlg::backdrop { background: rgba(0,0,0,.45); }
+.usrwrap { max-height: 70vh; overflow: auto; border: 1px solid var(--grid); border-radius: 8px; }
+#tUsr { font-size: 13px; width: 100%; }
+#tUsr th { position: sticky; top: 0; background: var(--surface-1); z-index: 1;
+  white-space: nowrap; padding: 8px 10px; text-align: left; }
+#tUsr td { padding: 7px 10px; white-space: nowrap; border-top: 1px solid var(--grid); }
+#tUsr tr.off td { color: var(--ink-3); opacity: .6; }
+#tUsr .uav { width: 26px; height: 26px; border-radius: 50%; object-fit: cover;
+  background: var(--s1); color: #fff; font-size: 11px; display: inline-flex;
+  align-items: center; justify-content: center; font-weight: 600; vertical-align: middle; }
+#tUsr .tag { font-size: 10.5px; border-radius: 5px; padding: 1px 6px; }
+#tUsr .tag.on { color: var(--good-text); border: 1px solid var(--good-text); }
+#tUsr .tag.no { color: var(--crit); border: 1px solid var(--crit); }
+#tUsr .tag.adm { color: var(--s1); border: 1px solid var(--s1); }
+#tUsr .act { cursor: pointer; color: var(--s1); text-decoration: none; }
+#tUsr .act.dis { color: var(--crit); }
 .layout { display: grid; grid-template-columns: minmax(540px, 6fr) 7fr; gap: 14px; align-items: start; }
 @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -215,6 +244,7 @@ tfoot tr:hover td { background: none; }
 <div class="wrap">
   <div class="hdr">
     <h1>库存核对看板 · 伯俊 vs 京东秒送 / 美团闪购</h1>
+    <div class="me" id="me"></div>
     <button class="logout" id="btnTheme" title="切换明暗主题"></button>
     <a class="logout" href="logout" title="退出后需重新输入账号密码">⎋ 退出登录</a>
   </div>
@@ -246,6 +276,7 @@ tfoot tr:hover td { background: none; }
         <button class="btn btn2" id="btnUpload">上传数据</button>
         <button class="btn" id="btnXlsx">下载 Excel</button>
         <button class="btn btn2" id="btnSettings" title="配置管理：门店映射 / 京东网点 / 美团网点">⚙ 设置</button>
+        <button class="btn btn2" id="btnUsers" title="用户管理（仅管理员）" style="display:none">👤 用户管理</button>
       </div>
       <div class="layout">
         <div>
@@ -346,6 +377,17 @@ tfoot tr:hover td { background: none; }
   </div>
   <div class="updlg-foot"><button class="btn btn2" id="setClose">关闭</button></div>
 </dialog>
+<dialog id="usrDlg">
+  <div class="updlg-body">
+    <h3>用户管理</h3>
+    <div class="updlg-sub">所有登录过的用户；禁用后该账号将无法再登录。仅管理员（SKG 账号密码登录）可见。</div>
+    <div class="usrwrap"><table id="tUsr">
+      <thead><tr><th>用户</th><th>来源</th><th>邮箱</th><th>首次登录</th><th>最近登录</th><th>次数</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody></tbody></table></div>
+    <div class="setstatus" id="usrStatus"></div>
+  </div>
+  <div class="updlg-foot"><button class="btn btn2" id="usrClose">关闭</button></div>
+</dialog>
 <script>
 /* ---- 明暗主题切换（独立于数据加载，数据库故障时也可用） ---- */
 (function () {
@@ -360,6 +402,79 @@ tfoot tr:hover td { background: none; }
     paint();
   };
   paint();
+})();
+
+/* ---- 顶部真实身份 + 用户管理（仅管理员），独立于数据加载 ---- */
+(function () {
+  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const SRC = { feishu: '飞书', password: 'SKG账号', dev: '本地开发' };
+  const avatar = (u, cls) => u.avatar_url
+    ? `<img class="${cls}" src="${esc(u.avatar_url)}" alt="">`
+    : `<span class="${cls}">${esc((u.name || '?').trim().slice(0, 1))}</span>`;
+
+  const usrDlg = document.getElementById('usrDlg');
+  const tUsr = document.getElementById('tUsr').tBodies[0];
+  const usrStatus = document.getElementById('usrStatus');
+
+  async function loadUsers() {
+    usrStatus.textContent = '加载中…';
+    let j;
+    try {
+      const res = await fetch('api/users');
+      if (res.status === 401) { location.reload(); return; }
+      if (res.status === 403) { usrStatus.innerHTML = '<span class="err">无权限</span>'; return; }
+      j = await res.json();
+    } catch (e) { usrStatus.innerHTML = '<span class="err">加载失败</span>'; return; }
+    const rows = j.users || [];
+    tUsr.innerHTML = rows.map(u => `<tr class="${u.is_active ? '' : 'off'}">
+      <td><span class="name-cell">${avatar(u, 'uav')}&nbsp;<span class="nm">${esc(u.name || '(未命名)')}</span>
+        ${u.is_admin ? '<span class="tag adm">管理员</span>' : ''}</span></td>
+      <td>${SRC[u.source] || esc(u.source || '')}</td>
+      <td>${esc(u.email || '—')}</td>
+      <td>${esc(u.first_login_at || '—')}</td>
+      <td>${esc(u.last_login_at || '—')}</td>
+      <td>${u.login_count ?? 0}</td>
+      <td><span class="tag ${u.is_active ? 'on' : 'no'}">${u.is_active ? '正常' : '已禁用'}</span></td>
+      <td>${u.is_admin ? '<span style="color:var(--ink-3)">—</span>'
+        : `<a class="act ${u.is_active ? 'dis' : ''}" data-oid="${esc(u.open_id)}" data-act="${u.is_active ? 0 : 1}">${u.is_active ? '禁用' : '启用'}</a>`}</td>
+      </tr>`).join('') || '<tr><td colspan="8" style="color:var(--ink-3)">暂无登录用户</td></tr>';
+    usrStatus.textContent = `共 ${rows.length} 位用户`;
+  }
+
+  tUsr.onclick = async (e) => {
+    const a = e.target.closest('a.act');
+    if (!a) return;
+    const oid = a.dataset.oid, active = a.dataset.act === '1';
+    a.textContent = '…';
+    try {
+      const res = await fetch(`api/users/${encodeURIComponent(oid)}/active`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active }) });
+      if (!res.ok) { const j = await res.json().catch(() => ({}));
+        usrStatus.innerHTML = `<span class="err">${esc(j.error || '操作失败')}</span>`; }
+    } catch { usrStatus.innerHTML = '<span class="err">操作失败</span>'; }
+    loadUsers();
+  };
+
+  const btnUsers = document.getElementById('btnUsers');
+  btnUsers.onclick = () => { usrDlg.showModal(); loadUsers(); };
+  document.getElementById('usrClose').onclick = () => usrDlg.close();
+
+  (async () => {
+    let u;
+    try {
+      const res = await fetch('api/me');
+      if (!res.ok) return;
+      u = (await res.json()).user;
+    } catch { return; }
+    if (!u) return;
+    const me = document.getElementById('me');
+    me.innerHTML = `${avatar(u, 'av')}<span class="nm">${esc(u.name || '')}</span>` +
+      (u.is_admin ? '<span class="badge">管理员</span>' : '');
+    me.style.display = 'flex';
+    if (u.is_admin) btnUsers.style.display = '';
+  })();
 })();
 
 (async () => {

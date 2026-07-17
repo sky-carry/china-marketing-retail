@@ -68,6 +68,20 @@ def _current_user_name(request: Request) -> str:
     return sub                          # 账号密码登录：subject 就是用户名
 
 
+def _is_admin(request: Request) -> bool:
+    """管理员=用 SKG 账号密码登录（subject==DASH_USER）或本地开发；飞书用户默认非管理员，
+    可在 users 表把 is_admin 置 true 提权。含 DB 查询，异步路由里请用 to_thread 调用。"""
+    sub = auth.session_subject(request)
+    if sub == 'dev':
+        return True
+    if not sub:
+        return False
+    if sub.startswith('ou_'):          # 飞书登录
+        u = users.get_by_open_id(sub)
+        return bool(u and u.get('is_admin'))
+    return sub == settings.username    # 账号密码登录
+
+
 def _not_modified(request: Request, etag: str):
     return request.headers.get('if-none-match') == etag
 
@@ -146,7 +160,40 @@ async def api_me(request: Request):
         user = await asyncio.to_thread(users.get_by_open_id, sub)
     if not user:                       # 账号密码 / dev / 查不到
         user = {'name': _current_user_name(request), 'source': 'dev' if sub == 'dev' else 'password'}
+    user['is_admin'] = await asyncio.to_thread(_is_admin, request)
     return {'ok': True, 'user': user}
+
+
+# ---------- 用户管理（仅管理员：SKG 账号密码登录）----------
+
+async def _require_admin(request: Request):
+    """管理员门禁：未登录 401，非管理员 403，通过返回 None。"""
+    if not auth.is_authed(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    if not await asyncio.to_thread(_is_admin, request):
+        return JSONResponse({'error': '需要管理员权限'}, status_code=403)
+    return None
+
+
+@app.get('/api/users')
+async def api_users(request: Request):
+    if (r := await _require_admin(request)):
+        return r
+    rows = await asyncio.to_thread(users.list_all)
+    return {'ok': True, 'users': rows}
+
+
+@app.post('/api/users/{open_id}/active')
+async def api_user_active(request: Request, open_id: str):
+    if (r := await _require_admin(request)):
+        return r
+    body = await _json_body(request)
+    if not isinstance(body, dict) or 'active' not in body:
+        return JSONResponse({'error': '缺少 active 参数'}, status_code=400)
+    ok = await asyncio.to_thread(users.set_active, open_id, bool(body['active']))
+    if not ok:
+        return JSONResponse({'error': f'用户 {open_id} 不存在'}, status_code=404)
+    return {'ok': True}
 
 
 # ---------- 数据接口 ----------

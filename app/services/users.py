@@ -99,3 +99,35 @@ def display_name(open_id: str) -> str:
     if u and u.get('name'):
         return u['name']
     return (open_id or '')[:8] or '未知'
+
+
+def list_all(limit: int = 500) -> list:
+    """用户管理页：列出所有登录过的用户，最近登录在前。"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        _ensure(cur)
+        conn.commit()
+        cur.execute("""SELECT open_id, name, avatar_url, email, mobile, source,
+                              is_admin, is_active, login_count,
+                              to_char(last_login_at,  'YYYY-MM-DD HH24:MI'),
+                              to_char(first_login_at, 'YYYY-MM-DD HH24:MI')
+                       FROM users
+                       ORDER BY last_login_at DESC NULLS LAST, id DESC
+                       LIMIT %s""", (limit,))
+        cols = ['open_id', 'name', 'avatar_url', 'email', 'mobile', 'source',
+                'is_admin', 'is_active', 'login_count', 'last_login_at', 'first_login_at']
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def set_active(open_id: str, active: bool) -> bool:
+    """启用/禁用某个飞书用户（禁用后其登录会被拦下）。返回是否命中记录。"""
+    if not open_id:
+        return False
+    with get_conn() as conn:
+        cur = conn.cursor()
+        _ensure(cur)
+        cur.execute('UPDATE users SET is_active = %s, updated_at = now() '
+                    'WHERE open_id = %s', (bool(active), open_id))
+        n = cur.rowcount
+        conn.commit()
+        return n > 0
