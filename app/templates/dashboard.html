@@ -262,6 +262,8 @@ tfoot tr:hover td { background: none; }
         <label style="font-size:12.5px;display:flex;align-items:center;gap:5px">
           <input type="checkbox" id="gOnlyBad" checked>只看不达标</label>
         <div class="sp"></div>
+        <button class="btn btn2" id="btnUploadG">上传数据</button>
+        <button class="btn" id="btnXlsxG">下载 Excel</button>
       </div>
       <div class="layout">
         <div>
@@ -611,21 +613,26 @@ el('tDetail').tHead.onclick = e => {
 ['fFlag','fKw'].forEach(id => el(id).oninput = () => { page = 0; renderDetail(); });
 renderDetail();
 
-/* ---- 下载 Excel（走服务端 /export.xlsx，不再内嵌页面，页面瘦身 ~40%） ---- */
+/* ---- 下载 Excel（走服务端 /export.xlsx?kind=，两个 Tab 各下各的） ---- */
+function downloadXlsx(kind, label) {
+  const a = document.createElement('a');
+  a.href = 'export.xlsx?kind=' + kind;
+  a.download = `${label}_${DATA.meta.generated_at.replace(/[ :]/g, '-')}.xlsx`;
+  a.click();
+}
 if (location.protocol === 'file:') {
-  el('btnXlsx').style.display = 'none';   // 本地双击打开时无服务端，隐藏下载
+  el('btnXlsx').style.display = 'none';    // 本地双击打开时无服务端，隐藏下载
+  el('btnXlsxG').style.display = 'none';
 } else {
-  el('btnXlsx').onclick = () => {
-    const a = document.createElement('a');
-    a.href = 'export.xlsx';
-    a.download = `库存核对_${DATA.meta.generated_at.replace(/[ :]/g, '-')}.xlsx`;
-    a.click();
-  };
+  el('btnXlsx').onclick = () => downloadXlsx('recon', '客户门店核对');
+  el('btnXlsxG').onclick = () => downloadXlsx('guard', '网点保障');
 }
 
 /* ---- 上传数据 ---- */
 const upDlg = el('upDlg'), upStatus = el('upStatus');
-el('btnUpload').onclick = () => { upDlg.showModal(); pollEtl(false); loadHistory(); };
+const openUpload = () => { upDlg.showModal(); pollEtl(false); loadHistory(); };
+el('btnUpload').onclick = openUpload;
+el('btnUploadG').onclick = openUpload;    // 网点保障 Tab 复用同一上传对话框
 el('upClose').onclick = () => upDlg.close();
 let etlTimer = null, etlWasRunning = false;
 

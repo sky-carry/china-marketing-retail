@@ -34,6 +34,9 @@ class Settings:
     # 飞书网页登录（OAuth 授权码流程）
     feishu_app_id: str = os.getenv('FEISHU_APP_ID', '')
     feishu_app_secret: str = os.getenv('FEISHU_APP_SECRET', '')
+    # 固定回调地址，须与飞书后台「网页应用→重定向URL」白名单一字不差。
+    # 必须固定（不能用 request.base_url 动态生成）——飞书客户端内打开时 Host 会变，动态值对不上白名单。
+    feishu_redirect_uri: str = os.getenv('FEISHU_REDIRECT_URI', '')
 
     # 数据缓存
     cache_ttl: int = int(os.getenv('DASH_CACHE_TTL', '60'))                 # 秒

@@ -91,8 +91,11 @@ async def logout(request: Request):
 # ---------- 飞书网页登录 ----------
 
 def _redirect_uri(request: Request) -> str:
-    # base_url 形如 http://120.79.214.225:8061/，回调路径须与飞书后台白名单一致
-    return str(request.base_url).rstrip('/') + '/feishu/callback'
+    # 优先用配置的固定回调地址（必须与飞书白名单一致）；飞书客户端内打开时 request.base_url
+    # 会变（Host/代理不同），动态生成会对不上白名单导致 20029。未配置时才回退动态（本地开发用）。
+    if settings.feishu_redirect_uri:
+        return settings.feishu_redirect_uri
+    return str(request.base_url).rstrip('/') + '/api/feishu/callback'
 
 
 @app.get('/feishu/login')
@@ -105,7 +108,7 @@ async def feishu_login(request: Request):
     return resp
 
 
-@app.get('/feishu/callback')
+@app.get('/api/feishu/callback')
 async def feishu_callback(request: Request, code: str = '', state: str = ''):
     if not code or not state or state != request.cookies.get('fs_state'):
         return _login_page('飞书登录校验失败，请重试')
@@ -132,16 +135,21 @@ async def api_data(request: Request):
                     headers={'ETag': etag, 'Cache-Control': 'no-cache'})
 
 
+_EXPORT_NAMES = {'recon': '客户门店核对', 'guard': '网点保障'}
+
+
 @app.get('/export.xlsx')
-async def export_xlsx(request: Request):
+async def export_xlsx(request: Request, kind: str = 'recon'):
     if not auth.is_authed(request):
         return _login_page()
-    etag, data = await asyncio.to_thread(excel.get_xlsx)
+    if kind not in _EXPORT_NAMES:
+        kind = 'recon'
+    etag, data = await asyncio.to_thread(excel.get_xlsx, kind)
     etag = 'W/' + etag
     if _not_modified(request, etag):
         return Response(status_code=304, headers={'ETag': etag})
     ts = time.strftime('%Y-%m-%d')
-    fname = urllib.parse.quote(f'库存核对_{ts}.xlsx')
+    fname = urllib.parse.quote(f'{_EXPORT_NAMES[kind]}_{ts}.xlsx')
     return Response(
         data,
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
