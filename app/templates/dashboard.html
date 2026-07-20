@@ -875,7 +875,7 @@ upDlg.querySelectorAll('button[data-kind]').forEach(btn => {
 let gSel = null;
 const gOpen = new Set();          // 展开的公司
 const PLAT_TAG = p => `<span class="ptag ${p === '京东' ? 'jd' : 'mt'}">${esc(p)}</span>`;
-const rateCell = (ok, cnt) => {
+const gRateCell = (ok, cnt) => {
   const p = cnt ? (100 * ok / cnt) : 0;
   return `<td class="num ${ok < cnt ? 'pos' : 'zero'}">${cnt ? p.toFixed(1) + '%' : '—'}</td>`;
 };
@@ -916,13 +916,13 @@ function renderGuard() {
       <td><span class="name-cell"><span class="exp">▶</span><span class="nm" title="${esc(c.name)}">${esc(c.name)}</span></span></td>
       <td class="num" style="white-space:nowrap">${fmt(c.outlets.length)} 网点（京东 ${fmt(c.jd)}·美团 ${fmt(c.mt)}）</td>
       <td class="num ${c.bad ? 'pos' : 'zero'}">${fmt(c.okSum)}/${fmt(c.cntSum)}<span style="color:var(--ink-3)">（不达标 ${fmt(c.bad)} 网点）</span></td>
-      ${rateCell(c.okSum, c.cntSum)}</tr>` +
+      ${gRateCell(c.okSum, c.cntSum)}</tr>` +
     (open ? c.outlets.map(r =>
       `<tr class="g-p ${gSel === r[0] + '|' + r[1] + '|' + r[2] ? 'sel' : ''}" data-c="${esc(r[0])}" data-plat="${esc(r[1])}" data-o="${esc(r[2])}" data-on="${esc(r[3])}" style="cursor:pointer">
         <td style="padding-left:34px" title="${esc(r[3])}">${esc(r[3])}</td>
         <td>${PLAT_TAG(r[1])}</td>
         <td class="num ${r[5] < r[4] ? 'pos' : 'zero'}">${fmt(r[5])}/${fmt(r[4])}</td>
-        ${rateCell(r[5], r[4])}</tr>`).join('') : '');
+        ${gRateCell(r[5], r[4])}</tr>`).join('') : '');
   }).join('');
   const bad = DATA.outletGuard.filter(r => r[5] < r[4]).length;
   el('tGuard').tFoot.innerHTML = `<tr>
