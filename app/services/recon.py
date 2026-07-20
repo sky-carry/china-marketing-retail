@@ -6,7 +6,7 @@ payload 结构（与前端 dashboard.html 约定）:
   detail:     [[客户, 门店, 货号, 品名, 伯俊, 京东, 美团, 京差, 美差, flag_idx], ...]
   unStores:   门店未匹配清单
   unProducts: 商品未匹配清单
-  outletGuard: [[客户, 平台, 网点编码, 网点名, 货号数, 达标货号数, 最差缺口, 最小库存], ...]
+  outletGuard: [[客户, 平台, 网点编码, 网点名, 货号数, 达标货号数], ...]
 """
 import json
 import time
@@ -51,18 +51,17 @@ def fetch_payload() -> dict:
             FROM v_product_unmatched ORDER BY platform, store_cnt DESC""")
         un_products = [[r[0], r[1], r[2], r[3], int(r[4]), _int(r[5])] for r in cur.fetchall()]
 
-        # 网点保障左树：公司 → 网点（京东启用 + 美团营业中），每个网点统计其各货号达标情况
+        # 网点保障左树：公司 → 网点（京东启用 + 美团营业中），每个网点统计其各货号达标情况；
+        # 按达标率升序（覆盖最差的网点排在最前）
         cur.execute("""
             SELECT customer_name, platform, outlet_code, outlet_name,
                    count(*)                      AS product_cnt,
-                   count(*) FILTER (WHERE is_ok) AS ok_cnt,
-                   min(gap)                      AS worst_gap,
-                   min(COALESCE(outlet_qty, 0))  AS min_qty
+                   count(*) FILTER (WHERE is_ok) AS ok_cnt
             FROM v_outlet_guard
             GROUP BY customer_name, platform, outlet_code, outlet_name
-            ORDER BY worst_gap, customer_name, platform, outlet_name""")
-        outlet_guard = [[r[0], r[1], r[2], r[3], r[4], r[5], _int(r[6]), _int(r[7])]
-                        for r in cur.fetchall()]
+            ORDER BY (count(*) FILTER (WHERE is_ok))::numeric / count(*),
+                     customer_name, platform, outlet_name""")
+        outlet_guard = [[r[0], r[1], r[2], r[3], r[4], r[5]] for r in cur.fetchall()]
 
         cur.execute("SELECT count(*) FROM v_dim_store WHERE NOT is_active")
         inactive = cur.fetchone()[0]

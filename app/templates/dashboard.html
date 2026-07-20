@@ -871,17 +871,19 @@ upDlg.querySelectorAll('button[data-kind]').forEach(btn => {
 });
 
 /* ---- 网点保障 Tab（公司 ▶ 网点 两级树；点网点看右侧各货号是否达标） ----
-   outletGuard 行: [0]客户 [1]平台 [2]网点编码 [3]网点名 [4]货号数 [5]达标货号数
-                   [6]最差缺口 [7]最小库存 */
+   outletGuard 行: [0]客户 [1]平台 [2]网点编码 [3]网点名 [4]货号数 [5]达标货号数 */
 let gSel = null;
 const gOpen = new Set();          // 展开的公司
 const PLAT_TAG = p => `<span class="ptag ${p === '京东' ? 'jd' : 'mt'}">${esc(p)}</span>`;
+const rateCell = (ok, cnt) => {
+  const p = cnt ? (100 * ok / cnt) : 0;
+  return `<td class="num ${ok < cnt ? 'pos' : 'zero'}">${cnt ? p.toFixed(1) + '%' : '—'}</td>`;
+};
 const GCOLS = [
   ['客户 / 网点', '一级为公司（与京东/美团网点的经销商精确匹配），▶ 展开显示其网点'],
   ['平台 / 网点数', '网点行显示所属平台；公司行显示网点总数（京东 / 美团）'],
-  ['达标货号', '网点行：该网点平台库存 ≥ 公司线下总和 的货号数 / 总货号数；公司行：不达标网点数'],
-  ['最小库存', '该网点所有货号中最低的平台库存（未上架按 0 计）'],
-  ['缺口', 'min(网点库存 − 线下总和)，负数越大缺口越严重'],
+  ['达标货号', '该网点平台库存 ≥ 公司线下总和 的货号数 / 总货号数；公司行为各网点合计'],
+  ['达标率%', '达标货号数 ÷ 总货号数；按此升序，覆盖最差的排最前'],
 ];
 function guardTree() {
   const kw = el('gKw').value.trim().toLowerCase();
@@ -892,14 +894,15 @@ function guardTree() {
   const m = new Map();
   for (const r of rows) {
     let c = m.get(r[0]);
-    if (!c) m.set(r[0], c = { name: r[0], outlets: [], jd: 0, mt: 0, bad: 0, worst: 0 });
+    if (!c) m.set(r[0], c = { name: r[0], outlets: [], jd: 0, mt: 0, bad: 0, okSum: 0, cntSum: 0 });
     c.outlets.push(r);
     if (r[1] === '京东') c.jd++; else c.mt++;
     if (r[5] < r[4]) c.bad++;
-    c.worst = Math.min(c.worst, r[6]);
+    c.okSum += r[5]; c.cntSum += r[4];
   }
-  const custs = [...m.values()].sort((a, b) => a.worst - b.worst);
-  custs.forEach(c => c.outlets.sort((a, b) => a[6] - b[6]));
+  const rate = o => o[4] ? o[5] / o[4] : 1;
+  const custs = [...m.values()].sort((a, b) => a.okSum / a.cntSum - b.okSum / b.cntSum);
+  custs.forEach(c => c.outlets.sort((a, b) => rate(a) - rate(b)));
   return { custs, shown: rows.length };
 }
 function renderGuard() {
@@ -912,19 +915,19 @@ function renderGuard() {
     return `<tr class="g-c ${open ? 'open' : ''}" data-c="${esc(c.name)}" style="cursor:pointer">
       <td><span class="name-cell"><span class="exp">▶</span><span class="nm" title="${esc(c.name)}">${esc(c.name)}</span></span></td>
       <td class="num" style="white-space:nowrap">${fmt(c.outlets.length)} 网点（京东 ${fmt(c.jd)}·美团 ${fmt(c.mt)}）</td>
-      <td class="num ${c.bad ? 'pos' : 'zero'}">不达标 ${fmt(c.bad)}</td>
-      <td class="num"></td>${diffCell(c.worst)}</tr>` +
+      <td class="num ${c.bad ? 'pos' : 'zero'}">${fmt(c.okSum)}/${fmt(c.cntSum)}<span style="color:var(--ink-3)">（不达标 ${fmt(c.bad)} 网点）</span></td>
+      ${rateCell(c.okSum, c.cntSum)}</tr>` +
     (open ? c.outlets.map(r =>
       `<tr class="g-p ${gSel === r[0] + '|' + r[1] + '|' + r[2] ? 'sel' : ''}" data-c="${esc(r[0])}" data-plat="${esc(r[1])}" data-o="${esc(r[2])}" data-on="${esc(r[3])}" style="cursor:pointer">
         <td style="padding-left:34px" title="${esc(r[3])}">${esc(r[3])}</td>
         <td>${PLAT_TAG(r[1])}</td>
         <td class="num ${r[5] < r[4] ? 'pos' : 'zero'}">${fmt(r[5])}/${fmt(r[4])}</td>
-        <td class="num">${fmt(r[7])}</td>${diffCell(r[6])}</tr>`).join('') : '');
+        ${rateCell(r[5], r[4])}</tr>`).join('') : '');
   }).join('');
   const bad = DATA.outletGuard.filter(r => r[5] < r[4]).length;
   el('tGuard').tFoot.innerHTML = `<tr>
     <td colspan="2">共 ${fmt(new Set(DATA.outletGuard.map(r => r[0])).size)} 家公司 · ${fmt(DATA.outletGuard.length)} 个网点（不达标 ${fmt(bad)}）</td>
-    <td colspan="3" class="num">当前筛选 ${fmt(custs.length)} 家 / ${fmt(shown)} 网点</td></tr>`;
+    <td colspan="2" class="num">当前筛选 ${fmt(custs.length)} 家 / ${fmt(shown)} 网点</td></tr>`;
 }
 let gDetRows = [];
 function renderGuardDet() {
