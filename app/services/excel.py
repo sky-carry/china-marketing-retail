@@ -103,8 +103,8 @@ def _build_recon(sheet):
 def _build_guard(sheet):
     """网点保障相关 sheet（与「网点保障」Tab 一致：公司→网点→货号）。"""
     sheet('网点汇总',
-          ['客户名称', '平台', '网点名称', '网点编码', '货号数', '达标货号数',
-           '不达标货号数', '达标率%'],
+          ['客户名称', '平台', '网点名称', '网点编码', '产品SKU', '达标产品SKU',
+           '不达标产品SKU', '达标率%'],
           """SELECT customer_name, platform, outlet_name, outlet_code,
                     count(*)                          AS product_cnt,
                     count(*) FILTER (WHERE is_ok)     AS ok_cnt,
@@ -113,16 +113,16 @@ def _build_guard(sheet):
              FROM v_outlet_guard
              GROUP BY customer_name, platform, outlet_code, outlet_name
              ORDER BY ok_rate, customer_name, platform, outlet_name""",
-          widths=[32, 8, 30, 14, 10, 12, 12, 10])
+          widths=[32, 8, 30, 14, 10, 13, 15, 10])
     sheet('货号明细',
           ['客户名称', '平台', '网点名称', '网点编码', '货号', '品名',
-           '线下伯俊总和', '本网点库存', '缺口', '状态'],
+           '线下伯俊总和', '线上本网点库存', '缺口', '状态'],
           """SELECT customer_name, platform, outlet_name, outlet_code,
                     product_code, product_name, offline_qty, outlet_qty, gap,
                     CASE WHEN is_ok THEN '达标' ELSE '不足' END
              FROM v_outlet_guard
              ORDER BY customer_name, platform, outlet_name, is_ok, gap, product_code""",
-          widths=[32, 8, 30, 14, 16, 30, 12, 12, 10, 10])
+          widths=[32, 8, 30, 14, 16, 30, 12, 15, 10, 10])
 
 
 _BUILDERS = {'recon': _build_recon, 'guard': _build_guard}

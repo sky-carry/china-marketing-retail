@@ -949,7 +949,7 @@ let gDetRows = [];
 function renderGuardDet() {
   const onlyBad = el('gDetBad').checked;
   const rows = onlyBad ? gDetRows.filter(r => !r[5]) : gDetRows;
-  el('tGuardDet').innerHTML = '<thead><tr><th>货号</th><th>品名</th><th class="num">线下总和</th><th class="num">本网点库存</th><th class="num">缺口</th><th>状态</th></tr></thead><tbody>' +
+  el('tGuardDet').innerHTML = '<thead><tr><th>货号</th><th>品名</th><th class="num">线下总和</th><th class="num">线上本网点库存</th><th class="num">缺口</th><th>状态</th></tr></thead><tbody>' +
     rows.map(r => `<tr>
       <td>${esc(r[0])}</td>
       <td class="gnm" title="${esc(r[1])}">${esc(r[1] || '')}</td>
