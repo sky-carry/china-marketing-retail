@@ -313,7 +313,7 @@ tfoot tr:hover td { background: none; }
         <div>
           <div class="treehead">客户 / 门店（点击行联动右侧明细，▶ 展开门店）</div>
           <div class="tblwrap"><table id="tTree"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
-          <div class="note">差异 = Σ(平台库存 − 伯俊库存)；维护率 = Σmin(平台, 伯俊) ÷ Σ伯俊，超翻不掩盖缺翻。</div>
+          <div class="note">差异 = Σ(平台库存 − 伯俊库存)；维护率 = Σmin(平台, 伯俊) ÷ Σ伯俊，超翻不掩盖缺翻。搜索货号/品名时，仅显示含匹配货品的客户/门店，汇总列同步按匹配行计算。</div>
         </div>
         <div>
           <div class="dtitle" id="dTitle"></div>
@@ -563,19 +563,23 @@ function feed(a, r) {
 // 汇总维护率：Σmin(平台,伯俊) ÷ Σ伯俊，超发不掩盖缺翻
 const aggRate = (num, den) => den > 0 ? Math.min(100, Math.round(1000 * num / den) / 10) : null;
 
-const custMap = new Map();
-for (const r of DATA.detail) {
-  let c = custMap.get(r[0]);
-  if (!c) custMap.set(r[0], c = Object.assign(blankAgg(r[0]), { stores: new Map() }));
-  feed(c, r);
-  let s = c.stores.get(r[1]);
-  if (!s) c.stores.set(r[1], s = blankAgg(r[1]));
-  feed(s, r);
-}
 const byAbsDiff = (a, b) =>
   (Math.abs(b.jdDiffSum) + Math.abs(b.mtDiffSum)) - (Math.abs(a.jdDiffSum) + Math.abs(a.mtDiffSum));
-const custs = [...custMap.values()].sort(byAbsDiff);
-custs.forEach(c => c.storeList = [...c.stores.values()].sort(byAbsDiff));
+function buildTree(rows) {
+  const m = new Map();
+  for (const r of rows) {
+    let c = m.get(r[0]);
+    if (!c) m.set(r[0], c = Object.assign(blankAgg(r[0]), { stores: new Map() }));
+    feed(c, r);
+    let s = c.stores.get(r[1]);
+    if (!s) c.stores.set(r[1], s = blankAgg(r[1]));
+    feed(s, r);
+  }
+  const arr = [...m.values()].sort(byAbsDiff);
+  arr.forEach(c => c.storeList = [...c.stores.values()].sort(byAbsDiff));
+  return arr;
+}
+const custs = buildTree(DATA.detail);
 
 const storeCnt = custs.reduce((n, c) => n + c.storeList.length, 0);
 el('sub').textContent = `数据快照 ${DATA.meta.generated_at} · 明细 ${fmt(DATA.detail.length)} 行 · ` +
@@ -664,42 +668,55 @@ el('tTree').tHead.innerHTML = '<tr>' + TCOLS.map((c,i) =>
 const aggCells = a =>
   diffCell(a.jdDiffSum) + rateCell(aggRate(a.jdNum, a.jdDen)) +
   diffCell(a.mtDiffSum) + rateCell(aggRate(a.mtNum, a.mtDen));
-el('tTree').tBodies[0].innerHTML = custs.map((c, ci) =>
-  `<tr class="c-row" data-c="${ci}">
-     <td><span class="name-cell"><span class="exp">▶</span><span class="nm" title="${c.name}">${c.name}</span></span></td>
-     <td class="num">${fmt(c.storeList.length)}</td>
-     ${aggCells(c)}</tr>` +
-  c.storeList.map((s, si) =>
-  `<tr class="s-row" data-c="${ci}" data-s="${si}" hidden>
-     <td><span class="name-cell"><span class="nm" title="${s.name}">${s.name}</span></span></td>
-     <td class="num"></td>
-     ${aggCells(s)}</tr>`).join('')
-).join('');
-const tot = custs.reduce((a, c) => (feedTot(a, c), a), blankAgg(''));
+let sel = { cu: null, st: null };  // 当前选中：客户名 / 门店名（重建树后按名字保持）
+let treeView = custs;              // 当前树视图（搜索时为只含匹配货品的子集）
+const expanded = new Set();        // 已展开的客户名（重渲染后保持）
+const kwMatch = (r, kw) => !kw || (r[2]||'').toLowerCase().includes(kw) || (r[3]||'').toLowerCase().includes(kw);
 function feedTot(a, c) {
   a.jdDiffSum += c.jdDiffSum; a.mtDiffSum += c.mtDiffSum;
   a.jdNum += c.jdNum; a.jdDen += c.jdDen; a.mtNum += c.mtNum; a.mtDen += c.mtDen;
 }
-el('tTree').tFoot.innerHTML = `<tr>
-  <td>合计（${fmt(custs.length)} 家客户）</td>
-  <td class="num">${fmt(storeCnt)}</td>
-  ${aggCells(tot)}</tr>`;
-
-let sel = { c: null, s: null };   // 当前选中：客户索引 / 门店索引
+function renderTree() {
+  const kw = el('fKw').value.trim().toLowerCase();
+  treeView = kw ? buildTree(DATA.detail.filter(r => kwMatch(r, kw))) : custs;
+  // 原选中的客户/门店若已不在视图里，自动清除选中
+  const cv = sel.cu === null ? null : treeView.find(c => c.name === sel.cu);
+  if (sel.cu !== null && !cv) sel = { cu: null, st: null };
+  else if (sel.st !== null && !cv.storeList.some(s => s.name === sel.st)) sel.st = null;
+  el('tTree').tBodies[0].innerHTML = treeView.map((c, ci) => {
+    const open = expanded.has(c.name);
+    return `<tr class="c-row${open?' open':''}${sel.cu===c.name&&sel.st===null?' sel':''}" data-c="${ci}">
+       <td><span class="name-cell"><span class="exp">▶</span><span class="nm" title="${c.name}">${c.name}</span></span></td>
+       <td class="num">${fmt(c.storeList.length)}</td>
+       ${aggCells(c)}</tr>` +
+    c.storeList.map((s, si) =>
+    `<tr class="s-row${sel.cu===c.name&&sel.st===s.name?' sel':''}" data-c="${ci}" data-s="${si}"${open?'':' hidden'}>
+       <td><span class="name-cell"><span class="nm" title="${s.name}">${s.name}</span></span></td>
+       <td class="num"></td>
+       ${aggCells(s)}</tr>`).join('');
+  }).join('');
+  const tot = treeView.reduce((a, c) => (feedTot(a, c), a), blankAgg(''));
+  const tvStoreCnt = treeView.reduce((n, c) => n + c.storeList.length, 0);
+  el('tTree').tFoot.innerHTML = `<tr>
+    <td>合计（${fmt(treeView.length)} 家客户${kw ? '，含匹配货品' : ''}）</td>
+    <td class="num">${fmt(tvStoreCnt)}</td>
+    ${aggCells(tot)}</tr>`;
+}
 el('tTree').tBodies[0].onclick = e => {
   const tr = e.target.closest('tr'); if (!tr) return;
-  const ci = +tr.dataset.c;
+  const ci = +tr.dataset.c, c = treeView[ci];
   if (e.target.closest('.exp')) {                       // 展开 / 收起
     const open = tr.classList.toggle('open');
+    if (open) expanded.add(c.name); else expanded.delete(c.name);
     document.querySelectorAll(`#tTree .s-row[data-c="${ci}"]`).forEach(x => x.hidden = !open);
     return;
   }
   const isStore = tr.classList.contains('s-row');
-  const nc = ci, ns = isStore ? +tr.dataset.s : null;
-  if (sel.c === nc && sel.s === ns) { sel = { c: null, s: null }; }   // 再点一次取消选择
-  else sel = { c: nc, s: ns };
+  const ncu = c.name, nst = isStore ? c.storeList[+tr.dataset.s].name : null;
+  if (sel.cu === ncu && sel.st === nst) { sel = { cu: null, st: null }; }   // 再点一次取消选择
+  else sel = { cu: ncu, st: nst };
   document.querySelectorAll('#tTree tbody tr').forEach(x => x.classList.remove('sel'));
-  if (sel.c !== null) tr.classList.add('sel');
+  if (sel.cu !== null) tr.classList.add('sel');
   page = 0; renderDetail();
 };
 
@@ -725,8 +742,7 @@ function rateCell(v) {
 }
 function renderDetail() {
   const fl = el('fFlag').value, kw = el('fKw').value.trim().toLowerCase();
-  const cu = sel.c === null ? null : custs[sel.c].name;
-  const st = sel.s === null ? null : custs[sel.c].storeList[sel.s].name;
+  const cu = sel.cu, st = sel.st;
   let rows = DATA.detail.filter(r =>
     (!cu || r[0] === cu) && (!st || r[1] === st) &&
     (fl === '' || r[9] === +fl) &&
@@ -738,9 +754,9 @@ function renderDetail() {
     return (typeof x === 'string' ? x.localeCompare(y,'zh') : x - y) * sortDir;
   });
   el('dTitle').innerHTML = (st ? `${cu} · ${st}` : cu ? `${cu}（全部门店）` : '全部客户') +
-    (sel.c !== null ? ' <span class="clr" id="clrSel">✕ 清除选择</span>' : '');
+    (sel.cu !== null ? ' <span class="clr" id="clrSel">✕ 清除选择</span>' : '');
   const c = el('clrSel');
-  if (c) c.onclick = () => { sel = { c: null, s: null };
+  if (c) c.onclick = () => { sel = { cu: null, st: null };
     document.querySelectorAll('#tTree tbody tr').forEach(x => x.classList.remove('sel'));
     page = 0; renderDetail(); };
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
@@ -771,7 +787,9 @@ el('tDetail').tHead.onclick = e => {
   if (sortCol === i) sortDir *= -1; else { sortCol = i; sortDir = i >= 2 ? -1 : 1; }
   renderDetail();
 };
-['fFlag','fKw'].forEach(id => el(id).oninput = () => { page = 0; renderDetail(); });
+el('fFlag').oninput = () => { page = 0; renderDetail(); };
+el('fKw').oninput = () => { page = 0; renderTree(); renderDetail(); };   // 搜索联动左树
+renderTree();
 renderDetail();
 
 /* ---- 下载 Excel（走服务端 /export.xlsx?kind=；服务端已后台预热，通常秒开；
