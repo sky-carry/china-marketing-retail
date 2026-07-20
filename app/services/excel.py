@@ -169,3 +169,36 @@ def get_xlsx(kind: str = 'recon') -> Tuple[str, bytes]:
     with _lock:
         _cache[kind] = {'etag': etag, 'bytes': data}
     return etag, data
+
+
+# ---- 后台预热：启动时 + 每次数据变更后先把两个 Excel 建好，让下载点击命中缓存 ----
+# 生成慢（recon ~3.5s / guard ~7s），不预热则每次改数据后第一次点击都要等。
+_warm_lock = threading.Lock()
+_warm_state = {'running': False, 'again': False}
+
+
+def warm(kinds=('recon', 'guard')) -> None:
+    """后台预生成缓存；合并突发调用（配置连改多行只跑最后一次）。"""
+    with _warm_lock:
+        if _warm_state['running']:
+            _warm_state['again'] = True       # 已在跑：标记跑完再来一轮
+            return
+        _warm_state['running'] = True
+
+    def _run():
+        while True:
+            for k in kinds:
+                try:
+                    get_xlsx(k)
+                except Exception:              # noqa: BLE001 —— 预热失败点击时兜底重建
+                    pass
+            with _warm_lock:
+                if not _warm_state['again']:
+                    _warm_state['running'] = False
+                    return
+                _warm_state['again'] = False    # 期间又有变更：再跑一轮
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+recon.on_invalidate(warm)     # 数据入库 / 配置改动后自动预热

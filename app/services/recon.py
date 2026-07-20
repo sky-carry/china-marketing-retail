@@ -95,12 +95,23 @@ def fetch_outlet_detail(customer: str, platform: str, outlet: str) -> list:
 # ---- 缓存层：payload 序列化结果 + ETag，跟随 cache_ttl 失效 ----
 _lock = threading.Lock()
 _cache = {'ts': 0.0, 'body': b'', 'etag': ''}
+_on_invalidate = []          # 数据失效后的回调（如 Excel 缓存预热），避免反向 import
+
+
+def on_invalidate(fn) -> None:
+    """注册"数据已变更"回调（excel 用它触发后台预热）。"""
+    _on_invalidate.append(fn)
 
 
 def invalidate() -> None:
-    """数据入库后调用，使缓存立即失效。"""
+    """数据入库后调用，使缓存立即失效，并通知订阅者（预热等）。"""
     with _lock:
         _cache.update(ts=0.0, body=b'', etag='')
+    for fn in list(_on_invalidate):
+        try:
+            fn()
+        except Exception:        # noqa: BLE001 —— 回调失败不影响主流程
+            pass
 
 
 def get_data() -> Tuple[str, bytes]:

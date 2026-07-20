@@ -31,6 +31,12 @@ app = FastAPI(title='库存核对平台', docs_url=None, redoc_url=None, openapi
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
+@app.on_event('startup')
+async def _warm_export_cache():
+    """启动即后台预生成 Excel，避免用户第一次点下载等 3~7s。"""
+    excel.warm()
+
+
 def _template(name: str) -> str:
     with open(os.path.join(TEMPLATE_DIR, name), encoding='utf-8') as f:
         return f.read()

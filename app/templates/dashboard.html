@@ -774,19 +774,35 @@ el('tDetail').tHead.onclick = e => {
 ['fFlag','fKw'].forEach(id => el(id).oninput = () => { page = 0; renderDetail(); });
 renderDetail();
 
-/* ---- 下载 Excel（走服务端 /export.xlsx?kind=，两个 Tab 各下各的） ---- */
-function downloadXlsx(kind, label) {
-  const a = document.createElement('a');
-  a.href = 'export.xlsx?kind=' + kind;
-  a.download = `${label}_${DATA.meta.generated_at.replace(/[ :]/g, '-')}.xlsx`;
-  a.click();
+/* ---- 下载 Excel（走服务端 /export.xlsx?kind=；服务端已后台预热，通常秒开；
+       冷缓存时按钮显示"生成中…"，用 fetch 拿到 blob 才触发下载，避免无反馈） ---- */
+async function downloadXlsx(kind, label, btn) {
+  if (btn.dataset.busy) return;
+  const old = btn.textContent;
+  btn.dataset.busy = '1'; btn.textContent = '⏳ 生成中…';
+  try {
+    const res = await fetch('export.xlsx?kind=' + kind);
+    if (res.status === 401) { location.reload(); return; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${label}_${DATA.meta.generated_at.replace(/[ :]/g, '-')}.xlsx`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) {
+    alert('下载失败：' + e.message);
+  } finally {
+    delete btn.dataset.busy; btn.textContent = old;
+  }
 }
 if (location.protocol === 'file:') {
   el('btnXlsx').style.display = 'none';    // 本地双击打开时无服务端，隐藏下载
   el('btnXlsxG').style.display = 'none';
 } else {
-  el('btnXlsx').onclick = () => downloadXlsx('recon', '客户门店核对');
-  el('btnXlsxG').onclick = () => downloadXlsx('guard', '网点保障');
+  el('btnXlsx').onclick = e => downloadXlsx('recon', '客户门店核对', e.currentTarget);
+  el('btnXlsxG').onclick = e => downloadXlsx('guard', '网点保障', e.currentTarget);
 }
 
 /* ---- 上传数据 ---- */
