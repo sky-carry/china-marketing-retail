@@ -6,6 +6,7 @@ payload 结构（与前端 dashboard.html 约定）:
   detail:     [[客户, 门店, 货号, 品名, 伯俊, 京东, 美团, 京差, 美差, flag_idx], ...]
   unStores:   门店未匹配清单
   unProducts: 商品未匹配清单
+  outletGuard: [[客户, 平台, 网点编码, 网点名, 货号数, 达标货号数, 最差缺口, 最小库存], ...]
 """
 import json
 import time
@@ -50,14 +51,18 @@ def fetch_payload() -> dict:
             FROM v_product_unmatched ORDER BY platform, store_cnt DESC""")
         un_products = [[r[0], r[1], r[2], r[3], int(r[4]), _int(r[5])] for r in cur.fetchall()]
 
+        # 网点保障左树：公司 → 网点（京东启用 + 美团营业中），每个网点统计其各货号达标情况
         cur.execute("""
-            SELECT customer_name, product_code, product_name, offline_qty,
-                   outlet_cnt, ok_cnt, jd_cnt, jd_ok, mt_cnt, mt_ok,
-                   min_outlet_qty, worst_gap
-            FROM v_outlet_guard_summary
-            ORDER BY worst_gap, customer_name, product_code""")
-        outlet_guard = [[r[0], r[1], r[2], _int(r[3]), r[4], r[5], r[6], r[7], r[8], r[9],
-                         _int(r[10]), _int(r[11])] for r in cur.fetchall()]
+            SELECT customer_name, platform, outlet_code, outlet_name,
+                   count(*)                      AS product_cnt,
+                   count(*) FILTER (WHERE is_ok) AS ok_cnt,
+                   min(gap)                      AS worst_gap,
+                   min(COALESCE(outlet_qty, 0))  AS min_qty
+            FROM v_outlet_guard
+            GROUP BY customer_name, platform, outlet_code, outlet_name
+            ORDER BY worst_gap, customer_name, platform, outlet_name""")
+        outlet_guard = [[r[0], r[1], r[2], r[3], r[4], r[5], _int(r[6]), _int(r[7])]
+                        for r in cur.fetchall()]
 
         cur.execute("SELECT count(*) FROM v_dim_store WHERE NOT is_active")
         inactive = cur.fetchone()[0]
@@ -75,16 +80,17 @@ def fetch_payload() -> dict:
             'outletGuard': outlet_guard}
 
 
-def fetch_outlet_detail(customer: str, product: str) -> list:
-    """某公司×货号在每个启用网点的库存明细（网点保障 Tab 点击行按需加载）。"""
+def fetch_outlet_detail(customer: str, platform: str, outlet: str) -> list:
+    """某公司某网点下每个货号的保障明细（网点保障 Tab 点网点行按需加载）。
+    行: [货号, 品名, 线下伯俊总和, 本网点库存, 缺口, 是否达标]；不达标在前、缺口大在前。"""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT platform, outlet_name, outlet_code, outlet_qty, gap, is_ok
+            SELECT product_code, product_name, offline_qty, outlet_qty, gap, is_ok
             FROM v_outlet_guard
-            WHERE customer_name = %s AND product_code = %s
-            ORDER BY platform, COALESCE(outlet_qty, -1), outlet_name""", (customer, product))
-        return [[r[0], r[1], r[2], _int(r[3]), _int(r[4]), r[5]] for r in cur.fetchall()]
+            WHERE customer_name = %s AND platform = %s AND outlet_code = %s
+            ORDER BY is_ok, gap, product_code""", (customer, platform, outlet))
+        return [[r[0], r[1], _int(r[2]), _int(r[3]), _int(r[4]), r[5]] for r in cur.fetchall()]
 
 
 # ---- 缓存层：payload 序列化结果 + ETag，跟随 cache_ttl 失效 ----

@@ -254,6 +254,9 @@ tfoot tr:hover td { background: none; }
 #tGuard .g-p td { font-weight: 400; color: var(--ink-2); }
 #tGuard .g-p td.pos { color: var(--crit); } #tGuard .g-p td.zero { color: var(--good-text); }
 #tGuard .g-p td.neg { color: var(--s1); }
+.ptag { font-size: 11px; padding: 1px 7px; border-radius: 4px; font-weight: 600; white-space: nowrap; }
+.ptag.jd { color: #2b6cff; background: rgba(43,108,255,.13); }
+.ptag.mt { color: #ff7a00; background: rgba(255,122,0,.14); }
 .name-cell { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .name-cell span.nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dtitle { font-size: 13.5px; font-weight: 600; margin-bottom: 10px; display: flex;
@@ -322,7 +325,7 @@ tfoot tr:hover td { background: none; }
     </div>
     <div id="p-guard" hidden>
       <div class="toolbar">
-        <input type="search" id="gKw" placeholder="搜索客户 / 货号 / 品名…">
+        <input type="search" id="gKw" placeholder="搜索客户 / 网点…">
         <label style="font-size:12.5px;display:flex;align-items:center;gap:5px">
           <input type="checkbox" id="gOnlyBad" checked>只看不达标</label>
         <div class="sp"></div>
@@ -331,16 +334,14 @@ tfoot tr:hover td { background: none; }
       </div>
       <div class="layout">
         <div>
-          <div class="treehead">公司 / 货号（▶ 展开货号，点击货号行看右侧网点明细）</div>
+          <div class="treehead">公司 / 网点（▶ 展开网点，点击网点行看右侧各货号明细）</div>
           <div class="tblwrap"><table id="tGuard"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
-          <div class="note">规则：公司所有在营专卖店的伯俊库存总和 ≤ 该公司<b>每一个</b>启用网点的京东可用库存（未上架视为不足）。客户名与网点经销商精确匹配，对不上的经销商不参与核对。</div>
+          <div class="note">规则：公司所有在营专卖店的伯俊库存总和（按货号）≤ 该公司<b>每一个</b>网点（京东启用 / 美团营业中）的平台库存（未上架视为不足）。客户名与网点经销商精确匹配，对不上的经销商不参与核对。</div>
         </div>
         <div>
-          <div id="gTitle" class="gdet-head">← 点击左侧货号行查看网点明细</div>
+          <div id="gTitle" class="gdet-head">← 点击左侧网点行查看各货号明细</div>
           <div class="toolbar" id="gDetBar" hidden style="margin:8px 0">
-            <label class="gplat"><input type="radio" name="gPlat" value="" checked>全部</label>
-            <label class="gplat"><input type="radio" name="gPlat" value="京东">京东</label>
-            <label class="gplat"><input type="radio" name="gPlat" value="美团">美团</label>
+            <label class="gplat"><input type="checkbox" id="gDetBad">只看不足货号</label>
           </div>
           <div class="tblwrap"><table id="tGuardDet"><thead></thead><tbody></tbody></table></div>
         </div>
@@ -869,40 +870,36 @@ upDlg.querySelectorAll('button[data-kind]').forEach(btn => {
   };
 });
 
-/* ---- 网点保障 Tab（公司 ▶ 货号 两级树，京东+美团合并） ----
-   outletGuard 行: [0]客户 [1]货号 [2]品名 [3]线下总和 [4]网点数 [5]达标数
-                   [6]京东网点 [7]京东达标 [8]美团网点 [9]美团达标 [10]最小库存 [11]最大缺口 */
+/* ---- 网点保障 Tab（公司 ▶ 网点 两级树；点网点看右侧各货号是否达标） ----
+   outletGuard 行: [0]客户 [1]平台 [2]网点编码 [3]网点名 [4]货号数 [5]达标货号数
+                   [6]最差缺口 [7]最小库存 */
 let gSel = null;
 const gOpen = new Set();          // 展开的公司
+const PLAT_TAG = p => `<span class="ptag ${p === '京东' ? 'jd' : 'mt'}">${esc(p)}</span>`;
 const GCOLS = [
-  ['客户 / 货号', '一级为公司（与京东/美团网点的经销商精确匹配），▶ 展开显示货号'],
-  ['品名', '公司行显示货号统计'],
-  ['线下总和', '该公司所有在营专卖店的伯俊库存合计（>0 的货号才参与核对）；公司行为各货号合计'],
-  ['京东网点', '达标数/网点数：京东可用库存 ≥ 线下总和 的启用网点数；公司行为京东网点总数'],
-  ['美团网点', '达标数/网点数：美团库存 ≥ 线下总和 的营业中网点数；公司行为美团网点总数；— 表示该公司无美团网点'],
-  ['最小库存', '两平台所有网点中最低的库存（未上架按 0 计）'],
+  ['客户 / 网点', '一级为公司（与京东/美团网点的经销商精确匹配），▶ 展开显示其网点'],
+  ['平台 / 网点数', '网点行显示所属平台；公司行显示网点总数（京东 / 美团）'],
+  ['达标货号', '网点行：该网点平台库存 ≥ 公司线下总和 的货号数 / 总货号数；公司行：不达标网点数'],
+  ['最小库存', '该网点所有货号中最低的平台库存（未上架按 0 计）'],
   ['缺口', 'min(网点库存 − 线下总和)，负数越大缺口越严重'],
 ];
-const okCell = (ok, cnt) => cnt === 0 ? '<td class="num null">—</td>'
-  : `<td class="num ${ok < cnt ? 'pos' : 'zero'}">${fmt(ok)}/${fmt(cnt)}</td>`;
 function guardTree() {
   const kw = el('gKw').value.trim().toLowerCase();
   const onlyBad = el('gOnlyBad').checked;
   const rows = DATA.outletGuard.filter(r =>
     (!onlyBad || r[5] < r[4]) &&
-    (!kw || [r[0], r[1], r[2]].some(v => String(v ?? '').toLowerCase().includes(kw))));
+    (!kw || [r[0], r[1], r[3]].some(v => String(v ?? '').toLowerCase().includes(kw))));
   const m = new Map();
   for (const r of rows) {
     let c = m.get(r[0]);
-    if (!c) m.set(r[0], c = { name: r[0], jdCnt: r[6], mtCnt: r[8], prods: [],
-                              offlineSum: 0, badProds: 0, worst: 0 });
-    c.prods.push(r);
-    c.offlineSum += r[3];
-    if (r[5] < r[4]) c.badProds++;
-    c.worst = Math.min(c.worst, r[11]);
+    if (!c) m.set(r[0], c = { name: r[0], outlets: [], jd: 0, mt: 0, bad: 0, worst: 0 });
+    c.outlets.push(r);
+    if (r[1] === '京东') c.jd++; else c.mt++;
+    if (r[5] < r[4]) c.bad++;
+    c.worst = Math.min(c.worst, r[6]);
   }
   const custs = [...m.values()].sort((a, b) => a.worst - b.worst);
-  custs.forEach(c => c.prods.sort((a, b) => a[11] - b[11]));
+  custs.forEach(c => c.outlets.sort((a, b) => a[6] - b[6]));
   return { custs, shown: rows.length };
 }
 function renderGuard() {
@@ -914,60 +911,54 @@ function renderGuard() {
     const open = !!kw || gOpen.has(c.name);      // 搜索时自动展开
     return `<tr class="g-c ${open ? 'open' : ''}" data-c="${esc(c.name)}" style="cursor:pointer">
       <td><span class="name-cell"><span class="exp">▶</span><span class="nm" title="${esc(c.name)}">${esc(c.name)}</span></span></td>
-      <td class="num" style="white-space:nowrap">${fmt(c.prods.length)} 货号（不达标 ${fmt(c.badProds)}）</td>
-      <td class="num">${fmt(c.offlineSum)}</td>
-      <td class="num">${c.jdCnt ? fmt(c.jdCnt) + ' 个' : '—'}</td>
-      <td class="num">${c.mtCnt ? fmt(c.mtCnt) + ' 个' : '—'}</td>
+      <td class="num" style="white-space:nowrap">${fmt(c.outlets.length)} 网点（京东 ${fmt(c.jd)}·美团 ${fmt(c.mt)}）</td>
+      <td class="num ${c.bad ? 'pos' : 'zero'}">不达标 ${fmt(c.bad)}</td>
       <td class="num"></td>${diffCell(c.worst)}</tr>` +
-    (open ? c.prods.map(r =>
-      `<tr class="g-p ${gSel === r[0] + '|' + r[1] ? 'sel' : ''}" data-c="${esc(r[0])}" data-p="${esc(r[1])}" style="cursor:pointer">
-        <td style="padding-left:34px">${esc(r[1])}</td>
-        <td class="gnm" title="${esc(r[2])}">${esc(r[2] || '')}</td>
-        <td class="num">${fmt(r[3])}</td>
-        ${okCell(r[7], r[6])}
-        ${okCell(r[9], r[8])}
-        <td class="num">${fmt(r[10])}</td>${diffCell(r[11])}</tr>`).join('') : '');
+    (open ? c.outlets.map(r =>
+      `<tr class="g-p ${gSel === r[0] + '|' + r[1] + '|' + r[2] ? 'sel' : ''}" data-c="${esc(r[0])}" data-plat="${esc(r[1])}" data-o="${esc(r[2])}" data-on="${esc(r[3])}" style="cursor:pointer">
+        <td style="padding-left:34px" title="${esc(r[3])}">${esc(r[3])}</td>
+        <td>${PLAT_TAG(r[1])}</td>
+        <td class="num ${r[5] < r[4] ? 'pos' : 'zero'}">${fmt(r[5])}/${fmt(r[4])}</td>
+        <td class="num">${fmt(r[7])}</td>${diffCell(r[6])}</tr>`).join('') : '');
   }).join('');
   const bad = DATA.outletGuard.filter(r => r[5] < r[4]).length;
   el('tGuard').tFoot.innerHTML = `<tr>
-    <td colspan="3">共 ${fmt(new Set(DATA.outletGuard.map(r => r[0])).size)} 家公司 · ${fmt(DATA.outletGuard.length)} 个货号项（不达标 ${fmt(bad)}）</td>
-    <td colspan="4" class="num">当前筛选 ${fmt(custs.length)} 家 / ${fmt(shown)} 项</td></tr>`;
+    <td colspan="2">共 ${fmt(new Set(DATA.outletGuard.map(r => r[0])).size)} 家公司 · ${fmt(DATA.outletGuard.length)} 个网点（不达标 ${fmt(bad)}）</td>
+    <td colspan="3" class="num">当前筛选 ${fmt(custs.length)} 家 / ${fmt(shown)} 网点</td></tr>`;
 }
 let gDetRows = [];
 function renderGuardDet() {
-  const plat = document.querySelector('input[name=gPlat]:checked').value;
-  const rows = plat ? gDetRows.filter(r => r[0] === plat) : gDetRows;
-  el('tGuardDet').innerHTML = '<thead><tr><th>平台</th><th>网点</th><th>门店编号</th><th class="num">平台库存</th><th class="num">缺口</th><th>状态</th></tr></thead><tbody>' +
+  const onlyBad = el('gDetBad').checked;
+  const rows = onlyBad ? gDetRows.filter(r => !r[5]) : gDetRows;
+  el('tGuardDet').innerHTML = '<thead><tr><th>货号</th><th>品名</th><th class="num">线下总和</th><th class="num">本网点库存</th><th class="num">缺口</th><th>状态</th></tr></thead><tbody>' +
     rows.map(r => `<tr>
       <td>${esc(r[0])}</td>
-      <td title="${esc(r[1])}">${esc(r[1])}</td><td>${esc(r[2])}</td>
+      <td class="gnm" title="${esc(r[1])}">${esc(r[1] || '')}</td>
+      <td class="num">${fmt(r[2])}</td>
       <td class="num">${r[3] === null ? '<span class="null">未上架</span>' : fmt(r[3])}</td>
       ${diffCell(r[4])}
       <td class="${r[5] ? 'zero' : 'pos'}">${r[5] ? '✓ 达标' : '✕ 不足'}</td></tr>`).join('') + '</tbody>';
 }
-async function loadGuardDetail(cust, prod) {
-  el('gTitle').textContent = `${cust} · ${prod} 加载中…`;
+async function loadGuardDetail(cust, plat, outlet, outletName) {
+  el('gTitle').textContent = `${outletName} 加载中…`;
   try {
-    const res = await fetch(`api/outlet_guard?customer=${encodeURIComponent(cust)}&product=${encodeURIComponent(prod)}`);
+    const res = await fetch(`api/outlet_guard?customer=${encodeURIComponent(cust)}&platform=${encodeURIComponent(plat)}&outlet=${encodeURIComponent(outlet)}`);
     if (res.status === 401) { location.reload(); return; }
     const j = await res.json();
     gDetRows = j.rows;
-    const sum = DATA.outletGuard.find(r => r[0] === cust && r[1] === prod);
     const total = gDetRows.length, ok = gDetRows.filter(r => r[5]).length;
-    const jd = gDetRows.filter(r => r[0] === '京东').length;
     const unlisted = gDetRows.filter(r => r[3] === null).length;
     el('gTitle').innerHTML =
-      `<div class="l1">${esc(cust)} · ${esc(prod)}　线下总和 <b>${fmt(sum ? sum[3] : '')}</b>（每个网点需 ≥ 此数）</div>` +
-      `<div class="l2">共 ${fmt(total)} 个网点（京东 ${fmt(jd)} · 美团 ${fmt(total - jd)}）｜ ` +
-      `<span class="zero">达标 ${fmt(ok)}</span> · <span class="pos">不足 ${fmt(total - ok)}</span>` +
-      `${unlisted ? `，其中未上架 ${fmt(unlisted)}` : ''}</div>`;
+      `<div class="l1">${PLAT_TAG(plat)} ${esc(outletName)}　<span style="color:var(--ink-3);font-weight:400">${esc(cust)}</span></div>` +
+      `<div class="l2">共 ${fmt(total)} 个货号 ｜ <span class="zero">达标 ${fmt(ok)}</span> · <span class="pos">不足 ${fmt(total - ok)}</span>` +
+      `${unlisted ? `，其中未上架 ${fmt(unlisted)}` : ''}（各货号需 网点库存 ≥ 公司线下总和）</div>`;
     el('gDetBar').hidden = false;
     renderGuardDet();
   } catch (e) {
     el('gTitle').textContent = '明细加载失败: ' + e.message;
   }
 }
-document.querySelectorAll('input[name=gPlat]').forEach(x => x.onchange = renderGuardDet);
+el('gDetBad').onchange = renderGuardDet;
 el('tGuard').onclick = e => {
   const tr = e.target.closest('tbody tr'); if (!tr) return;
   if (tr.classList.contains('g-c')) {           // 公司行：展开/收起
@@ -976,9 +967,9 @@ el('tGuard').onclick = e => {
     renderGuard();
     return;
   }
-  gSel = tr.dataset.c + '|' + tr.dataset.p;     // 货号行：选中 + 加载网点明细
+  gSel = tr.dataset.c + '|' + tr.dataset.plat + '|' + tr.dataset.o;   // 网点行：选中 + 加载货号明细
   renderGuard();
-  loadGuardDetail(tr.dataset.c, tr.dataset.p);
+  loadGuardDetail(tr.dataset.c, tr.dataset.plat, tr.dataset.o, tr.dataset.on);
 };
 el('gKw').oninput = renderGuard;
 el('gOnlyBad').onchange = renderGuard;
