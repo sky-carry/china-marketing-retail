@@ -10,6 +10,7 @@ import threading
 from typing import Tuple
 
 from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 from ..db import get_conn
 from . import recon
@@ -39,38 +40,64 @@ _AGG_COLS = """
         / NULLIF(sum(bojun_qty) FILTER (WHERE bojun_qty > 0 AND mt_qty IS NOT NULL), 0), 1)) AS mt_rate"""
 
 
+# 门店 → 京东/美团门店ID（v_dim_store 每店可能多行，先按店名去重取一个，避免 join 放大合计）
+_STORE_IDS = """(SELECT store_name, max(jd_id) AS jd_id, max(meituan_id) AS meituan_id
+                 FROM v_dim_store WHERE is_active GROUP BY store_name)"""
+
+
 def _build_recon(sheet):
     """客户/门店核对相关 sheet（与「客户/门店核对」Tab 一致）。"""
     sheet('客户汇总',
-          ['客户名称', '门店数', '京东差异', '京东维护率%', '美团差异', '美团维护率%'],
-          f"""SELECT customer_name, store_cnt, jd_diff, jd_rate, mt_diff, mt_rate FROM (
-                SELECT customer_name, count(DISTINCT store_name) AS store_cnt,{_AGG_COLS}
+          ['客户名称', '门店数', '伯俊库存', '京东库存', '京东差异', '京东维护率%',
+           '美团库存', '美团差异', '美团维护率%'],
+          f"""SELECT customer_name, store_cnt, bojun_sum, jd_sum, jd_diff, jd_rate,
+                     mt_sum, mt_diff, mt_rate FROM (
+                SELECT customer_name, count(DISTINCT store_name) AS store_cnt,
+                       COALESCE(sum(bojun_qty), 0) AS bojun_sum,
+                       COALESCE(sum(jd_qty), 0)    AS jd_sum,
+                       COALESCE(sum(mt_qty), 0)    AS mt_sum,{_AGG_COLS}
                 FROM v_recon_detail GROUP BY customer_name
-              ) t ORDER BY abs(jd_diff) + abs(mt_diff) DESC""")
+              ) t ORDER BY abs(jd_diff) + abs(mt_diff) DESC""",
+          widths=[32, 8, 10, 10, 10, 12, 10, 10, 12])
     sheet('门店汇总',
-          ['客户名称', '门店名称', '京东差异', '京东维护率%', '美团差异', '美团维护率%'],
-          f"""SELECT customer_name, store_name, jd_diff, jd_rate, mt_diff, mt_rate FROM (
-                SELECT customer_name, store_name,{_AGG_COLS}
-                FROM v_recon_detail GROUP BY customer_name, store_name
-              ) t ORDER BY customer_name, abs(jd_diff) + abs(mt_diff) DESC""")
+          ['客户名称', '门店名称', '伯俊库存', '京东门店ID', '京东库存', '京东差异',
+           '京东维护率%', '美团门店ID', '美团库存', '美团差异', '美团维护率%'],
+          f"""SELECT customer_name, store_name, bojun_sum, jd_id, jd_sum, jd_diff, jd_rate,
+                     meituan_id, mt_sum, mt_diff, mt_rate FROM (
+                SELECT d.customer_name, d.store_name,
+                       COALESCE(sum(d.bojun_qty), 0) AS bojun_sum,
+                       COALESCE(sum(d.jd_qty), 0)    AS jd_sum,
+                       COALESCE(sum(d.mt_qty), 0)    AS mt_sum,
+                       max(ids.jd_id) AS jd_id, max(ids.meituan_id) AS meituan_id,{_AGG_COLS}
+                FROM v_recon_detail d
+                LEFT JOIN {_STORE_IDS} ids ON ids.store_name = d.store_name
+                GROUP BY d.customer_name, d.store_name
+              ) t ORDER BY customer_name, abs(jd_diff) + abs(mt_diff) DESC""",
+          widths=[32, 30, 10, 12, 10, 10, 12, 12, 10, 10, 12])
     sheet('核对明细',
-          ['客户名称', '门店名称', '货号', '品名', '伯俊库存', '京东库存', '美团库存',
-           '京东差异', '京东维护率%', '美团差异', '美团维护率%', '状态'],
-          """SELECT customer_name, store_name, product_code, product_name,
-                    bojun_qty, jd_qty, mt_qty, jd_diff, mt_diff, flag
-             FROM v_recon_detail ORDER BY customer_name, store_name, product_code""",
+          ['客户名称', '门店名称', '货号', '品名', '伯俊库存', '京东门店ID', '京东库存',
+           '京东差异', '京东维护率%', '美团门店ID', '美团库存', '美团差异', '美团维护率%', '状态'],
+          f"""SELECT d.customer_name, d.store_name, d.product_code, d.product_name,
+                     d.bojun_qty, ids.jd_id, d.jd_qty, d.jd_diff, d.mt_diff,
+                     ids.meituan_id, d.mt_qty, d.flag
+             FROM v_recon_detail d
+             LEFT JOIN {_STORE_IDS} ids ON ids.store_name = d.store_name
+             ORDER BY d.customer_name, d.store_name, d.product_code""",
           transform=lambda rows: ([r[0], r[1], r[2], r[3], r[4], r[5], r[6],
-                                   r[7], _maintain_rate(r[5], r[4]),
-                                   r[8], _maintain_rate(r[6], r[4]), r[9]]
-                                  for r in rows))
+                                   r[7], _maintain_rate(r[6], r[4]),
+                                   r[9], r[10], r[8], _maintain_rate(r[10], r[4]), r[11]]
+                                  for r in rows),
+          widths=[32, 30, 16, 30, 10, 12, 10, 10, 12, 12, 10, 10, 12, 20])
     sheet('未匹配门店',
           ['门店名称', '伯俊店仓名(待修正)', '省份', '城市', '京东ID', '美团ID'],
           """SELECT store_name, bojun_warehouse, province, city, jd_id, meituan_id
-             FROM v_store_unmatched ORDER BY province, city, store_name""")
+             FROM v_store_unmatched ORDER BY province, city, store_name""",
+          widths=[30, 30, 12, 12, 12, 12])
     sheet('未匹配商品',
           ['平台', '平台编码', '商品名称', '条码', '涉及门店', '库存合计'],
           """SELECT platform, platform_code, product_name, barcode, store_cnt, total_qty
-             FROM v_product_unmatched ORDER BY platform, store_cnt DESC""")
+             FROM v_product_unmatched ORDER BY platform, store_cnt DESC""",
+          widths=[8, 16, 30, 16, 10, 12])
 
 
 def _build_guard(sheet):
@@ -101,10 +128,13 @@ def build_xlsx(kind: str = 'recon') -> bytes:
     with get_conn() as conn:
         cur = conn.cursor()
 
-        def sheet(name, headers, sql, transform=None):
+        def sheet(name, headers, sql, transform=None, widths=None):
             cur.execute(sql)
             rows = cur.fetchall()
             ws = wb.create_sheet(name)
+            if widths:                       # 按内容预设列宽，下载后无需手动拉宽
+                for i, w in enumerate(widths, start=1):
+                    ws.column_dimensions[get_column_letter(i)].width = w
             ws.append(headers)
             for r in (transform(rows) if transform else rows):
                 ws.append(list(r))
