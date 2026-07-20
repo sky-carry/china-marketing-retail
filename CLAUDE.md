@@ -25,9 +25,9 @@ There is **no test suite and no linter** configured. Validate before deploying:
 
 ## Deploy
 
-Production target is **newserver** (Ubuntu), project at **`/home/code/`**, reached via the `ssh-manager` MCP tools (`newserver`). Runtime: systemd service `skg-dashboard` (uvicorn :8061) + Docker PostgreSQL 18 container `skg-inventory-db` (127.0.0.1:**5439**, env `PGPORT=5439`).
+Production target is **newserver** (Ubuntu), project at **`/home/code/china-marketing-retail/`**, reached via the `ssh-manager` MCP tools (`newserver`). Runtime: systemd service `skg-dashboard` (uvicorn :8061) + Docker PostgreSQL 18 container `skg-inventory-db` (127.0.0.1:**5439**, env `PGPORT=5439`).
 
-- Upload changed files to `/home/code/<same path>`, then:
+- Upload changed files to `/home/code/china-marketing-retail/<same path>`, then:
   - **`.py` change → `systemctl restart skg-dashboard`** (also clears and re-warms the in-memory caches).
   - **`dashboard.html` / templates → no restart needed** — templates are read from disk per request.
 - The DB env vars are inline in the systemd unit (`PGHOST=127.0.0.1 PGPORT=5439 PGUSER=postgres PGPASSWORD=postgres PGDATABASE=inventory_check`); an ad-hoc `python3` on the server without them hits the wrong port and fails auth.

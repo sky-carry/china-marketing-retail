@@ -47,7 +47,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8061          # 启动服务
 
 - 服务器地址、账号等敏感信息见 `docs/部署信息.local.md`（不入 git），下文以 `<服务器IP>` 占位
 - 服务器组件：systemd 服务 `skg-dashboard`（uvicorn）+ Docker 容器 `skg-inventory-db`（PostgreSQL 18，仅 127.0.0.1:5439）
-- 项目目录：`/home/code/`
+- 项目目录：`/home/code/china-marketing-retail/`
 
 ### 日常数据更新（推荐：看板页面直接上传）
 
@@ -62,8 +62,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8061          # 启动服务
 低频数据（门店档案、飞书门店映射）仍走命令行：
 
 ```powershell
-scp "excel\京东门店.xls" root@<服务器IP>:/home/code/excel/
-ssh root@<服务器IP> "cd /home/code && PGPORT=5439 python3 etl/load_excel.py --only jd_store,feishu"
+scp "excel\京东门店.xls" root@<服务器IP>:/home/code/china-marketing-retail/excel/
+ssh root@<服务器IP> "cd /home/code/china-marketing-retail && PGPORT=5439 python3 etl/load_excel.py --only jd_store,feishu"
 ```
 
 `--only` 可选：bojun / jd_inventory / jd_store / meituan_store / meituan_inventory / feishu，不带则全量。
@@ -71,7 +71,7 @@ ssh root@<服务器IP> "cd /home/code && PGPORT=5439 python3 etl/load_excel.py -
 ### 线上发版（代码/页面有改动时）
 
 ```powershell
-scp -r app etl sql requirements.txt root@<服务器IP>:/home/code/
+scp -r app etl sql requirements.txt root@<服务器IP>:/home/code/china-marketing-retail/
 ssh root@<服务器IP> "systemctl restart skg-dashboard"
 ```
 
