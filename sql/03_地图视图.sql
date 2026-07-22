@@ -55,7 +55,8 @@ SELECT '专卖店'::text AS point_type, NULL::text AS platform,
        s.customer_name, s.province, s.city, s.address,
        g.lng, g.lat, g.level AS geo_level,
        js.sku_cnt AS jd_sku_cnt,
-       ms.sku_cnt AS mt_sku_cnt
+       ms.sku_cnt AS mt_sku_cnt,
+       g.adcode
 FROM stores s
 LEFT JOIN store_geo g ON g.status = 'ok' AND g.address = s.address
 LEFT JOIN jd_sku js   ON js.store_code = s.jd_id
@@ -64,7 +65,8 @@ UNION ALL
 SELECT '网点', '京东',
        ot.store_name, ot.dealer, NULL, ot.city, btrim(ot.store_address),
        g.lng, g.lat, g.level,
-       js.sku_cnt, NULL
+       js.sku_cnt, NULL,
+       g.adcode
 FROM feishu_jd_outlet ot
 LEFT JOIN store_geo g ON g.status = 'ok' AND g.address = btrim(ot.store_address)
 LEFT JOIN jd_sku js   ON js.store_code = ot.store_code
@@ -73,7 +75,8 @@ UNION ALL
 SELECT '网点', '美团',
        mo.store_name, mo.dealer, NULL, mo.city, btrim(mo.store_address),
        g.lng, g.lat, g.level,
-       NULL, ms.sku_cnt
+       NULL, ms.sku_cnt,
+       g.adcode
 FROM feishu_meituan_outlet mo
 LEFT JOIN store_geo g ON g.status = 'ok' AND g.address = btrim(mo.store_address)
 LEFT JOIN mt_sku ms   ON ms.store_id = mo.store_id

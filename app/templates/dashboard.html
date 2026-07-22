@@ -381,6 +381,8 @@ tfoot tr:hover td { background: none; }
         <label class="gm-ck"><input type="checkbox" id="gmT1" checked><i style="background:#e1251b"></i>京东网点</label>
         <label class="gm-ck"><input type="checkbox" id="gmT2" checked><i style="background:#ffb800"></i>美团网点</label>
         <select id="gmCust"><option value="">全部客户 / 经销商</option></select>
+        <select id="gmProv"><option value="">全部省份</option></select>
+        <select id="gmCity" disabled><option value="">全部城市</option></select>
         <input type="search" id="gmKw" placeholder="搜索名称 / 城市 / 地址…">
         <label class="gm-ck"><input type="checkbox" id="gmRing">配送范围圈</label>
         <div class="sp"></div>
@@ -1261,7 +1263,7 @@ async function gmInit() {
       gmState = 'error'; gmRenderStats([]); return;
     }
     if (cfg.jsSecret) window._AMapSecurityConfig = { securityJsCode: cfg.jsSecret };
-    if (!window.AMap) await gmLoadScript('https://webapi.amap.com/maps?v=2.0&key=' + encodeURIComponent(cfg.jsKey));
+    if (!window.AMap) await gmLoadScript('https://webapi.amap.com/maps?v=2.0&plugin=AMap.DistrictSearch&key=' + encodeURIComponent(cfg.jsKey));
     const dark = document.documentElement.dataset.theme === 'dark' ||
       (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
     box.innerHTML = '';
@@ -1272,6 +1274,7 @@ async function gmInit() {
     const custs2 = [...new Set(gmPts.map(p => p[2]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
     el('gmCust').innerHTML = '<option value="">全部客户 / 经销商</option>' +
       custs2.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    gmInitDistrict();
     gmState = 'ready';
     gmRender();
   } catch (e) {
@@ -1284,7 +1287,10 @@ function gmFiltered() {
   const on = [el('gmT0').checked, el('gmT1').checked, el('gmT2').checked];
   const cu = el('gmCust').value;
   const kw = el('gmKw').value.trim().toLowerCase();
+  // 省市过滤按 adcode 前缀（省=前2位/市=前4位/直辖市区县=6位），比按城市名匹配可靠
+  const region = (el('gmCity').value || el('gmProv').value).replace(/(00)+$/, '');
   return gmPts.filter(p => on[p[0]] && (!cu || p[2] === cu) &&
+    (!region || (p[10] || '').startsWith(region)) &&
     (!kw || [p[1], p[4], p[5], p[2]].some(v => (v || '').toLowerCase().includes(kw))));
 }
 
@@ -1336,6 +1342,53 @@ function gmRender() {
   }
   gmMap.add(gmRings); gmMap.add(gmMarkers);
 }
+
+/* ---- 省/市级联（高德行政区划服务）：地图跳转 + 按 adcode 过滤点位 ---- */
+const GM_CHINA = { zoom: 5, center: [107.8, 33.5] };
+let gmDist = null;
+
+function gmDistSearch(kw, level) {
+  return new Promise(resolve => {
+    gmDist.setLevel(level);
+    gmDist.search(kw, (status, res) =>
+      resolve(status === 'complete' ? (res.districtList || [])[0] : null));
+  });
+}
+
+function gmInitDistrict() {
+  AMap.plugin('AMap.DistrictSearch', async () => {
+    gmDist = new AMap.DistrictSearch({ subdistrict: 1, extensions: 'base' });
+    const cn = await gmDistSearch('中国', 'country');
+    if (!cn) return;
+    // option value 存 adcode（过滤用），data-center 存中心点（定位用）；选择时无需再查询、不会同名混淆
+    el('gmProv').innerHTML = '<option value="">全部省份</option>' +
+      (cn.districtList || []).map(d =>
+        `<option value="${d.adcode}" data-center="${d.center.lng},${d.center.lat}" data-name="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+  });
+}
+
+el('gmProv').onchange = async () => {
+  const sel = el('gmProv'), city = el('gmCity');
+  city.innerHTML = '<option value="">全部城市</option>';
+  city.disabled = !sel.value;
+  if (!sel.value) { if (gmMap) gmMap.setZoomAndCenter(GM_CHINA.zoom, GM_CHINA.center); gmRender(); return; }
+  const opt = sel.selectedOptions[0], name = opt.dataset.name;
+  gmMap.setZoomAndCenter(/市$/.test(name) ? 9 : 7, opt.dataset.center.split(',').map(Number));
+  gmRender();
+  // 直辖市/特区的下一级是区县，普通省份是地级市；都放进"城市"下拉
+  const d = await gmDistSearch(name, 'province');
+  if (d && sel.value === opt.value)
+    city.innerHTML = '<option value="">全部城市</option>' +
+      (d.districtList || []).map(c =>
+        `<option value="${c.adcode}" data-center="${c.center.lng},${c.center.lat}">${esc(c.name)}</option>`).join('');
+};
+
+el('gmCity').onchange = () => {
+  const sel = el('gmCity');
+  if (!sel.value) { el('gmProv').onchange(); return; }   // 清空城市 → 回到省级视野与省级过滤
+  gmMap.setZoomAndCenter(11, sel.selectedOptions[0].dataset.center.split(',').map(Number));
+  gmRender();
+};
 
 ['gmT0', 'gmT1', 'gmT2', 'gmCust', 'gmRing'].forEach(id => el(id).onchange = gmRender);
 el('gmKw').oninput = () => { clearTimeout(el('gmKw')._t); el('gmKw')._t = setTimeout(gmRender, 250); };

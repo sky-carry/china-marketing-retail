@@ -3,8 +3,9 @@
 
 payload 结构（与前端 dashboard.html 地图 Tab 约定）:
   meta:   { generated_at, total, located }
-  points: [[类型idx, 名称, 客户/经销商, 省份, 城市, 地址, lng, lat, 京东SKU, 美团SKU], ...]
-          类型idx: 0=专卖店 1=京东网点 2=美团网点；lng/lat 为 null 表示未定位。
+  points: [[类型idx, 名称, 客户/经销商, 省份, 城市, 地址, lng, lat, 京东SKU, 美团SKU, adcode], ...]
+          类型idx: 0=专卖店 1=京东网点 2=美团网点；lng/lat 为 null 表示未定位；
+          adcode = 高德行政区划代码（前2位省/前4位市，前端省市过滤用）。
 数据变化（ETL/配置修改）经 recon.invalidate() 级联清此缓存；geocode.py 离线补点后按 TTL 自然刷新。
 """
 import json
@@ -32,14 +33,14 @@ def fetch_payload() -> dict:
         cur = conn.cursor()
         cur.execute("""
             SELECT point_type, platform, name, customer_name, province, city, address,
-                   lng, lat, jd_sku_cnt, mt_sku_cnt
+                   lng, lat, jd_sku_cnt, mt_sku_cnt, adcode
             FROM v_map_points
             ORDER BY point_type, platform, customer_name, name""")
         points = []
         for r in cur.fetchall():
             tidx = 0 if r[0] == '专卖店' else (1 if r[1] == '京东' else 2)
             points.append([tidx, r[2], r[3], r[4], r[5], r[6],
-                           _num(r[7]), _num(r[8]), _num(r[9]), _num(r[10])])
+                           _num(r[7]), _num(r[8]), _num(r[9]), _num(r[10]), r[11]])
         try:
             cur.execute("SELECT max(loaded_at) FROM data_meta")
             loaded_at = cur.fetchone()[0]
