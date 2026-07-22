@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS store_alias (
   bojun_warehouse   text NOT NULL
 );
 COMMENT ON TABLE store_alias IS '门店别名人工对照表：飞书门店名 → 伯俊店仓名（名字对不上的门店在此修正，数据刷新不清空）';
+COMMENT ON COLUMN store_alias.feishu_store_name IS '飞书门店名（主键）';
+COMMENT ON COLUMN store_alias.bojun_warehouse IS '对应的伯俊店仓名称';
 
 -- 统一门店维度视图：所有核对逻辑从这里取门店，口径只此一处。
 -- is_active=false 的门店（备注为 闭店/机场店）不参与核对、不进看板。

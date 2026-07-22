@@ -1,0 +1,11 @@
+# 构建上下文精简：这些不进镜像（运行时代码走 bind mount，数据/密钥不打进镜像）
+excel/
+docs/
+.env
+.env.local
+*.bak
+__pycache__/
+*.pyc
+.git/
+.venv/
+venv/

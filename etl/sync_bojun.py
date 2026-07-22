@@ -96,6 +96,8 @@ def main():
     views_sql = os.path.join(BASE_DIR, 'sql', '02_核对视图.sql')
     cur.execute(open(views_sql, encoding='utf-8').read())
     cur.execute("CREATE TABLE IF NOT EXISTS data_meta (loaded_at timestamptz NOT NULL)")
+    cur.execute("COMMENT ON TABLE data_meta IS '数据装载元信息（仅一行）'")
+    cur.execute("COMMENT ON COLUMN data_meta.loaded_at IS '最近一次数据入库时间（导出文件名的时间戳取此值）'")
     cur.execute("DELETE FROM data_meta")
     cur.execute("INSERT INTO data_meta VALUES (now())")
     conn.commit()

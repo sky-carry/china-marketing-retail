@@ -86,6 +86,17 @@ def _ensure_log_table(cur):
         message text
     )""")
     cur.execute('ALTER TABLE upload_log ADD COLUMN IF NOT EXISTS operator text')
+    cur.execute("""
+        COMMENT ON TABLE upload_log IS '数据上传/入库历史记录';
+        COMMENT ON COLUMN upload_log.id IS '自增主键';
+        COMMENT ON COLUMN upload_log.created_at IS '记录时间';
+        COMMENT ON COLUMN upload_log.label IS '数据源名称（如 伯俊线下库存）';
+        COMMENT ON COLUMN upload_log.filename IS '上传的原始文件名';
+        COMMENT ON COLUMN upload_log.size_bytes IS '文件大小（字节）';
+        COMMENT ON COLUMN upload_log.state IS '结果：success=成功 / error=失败';
+        COMMENT ON COLUMN upload_log.message IS '结果信息/错误摘要（截断 500 字）';
+        COMMENT ON COLUMN upload_log.operator IS '操作人（密码用户名或飞书姓名）';
+    """)
 
 
 def add_log(label: str, filename: str, size: int, state: str, message: str,

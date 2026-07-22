@@ -26,7 +26,24 @@ CREATE TABLE IF NOT EXISTS users (
   login_count    int DEFAULT 0,
   created_at     timestamptz DEFAULT now(),
   updated_at     timestamptz DEFAULT now()
-)"""
+);
+COMMENT ON TABLE users IS '飞书登录用户表（共享密码登录不落此表）';
+COMMENT ON COLUMN users.id IS '自增主键';
+COMMENT ON COLUMN users.open_id IS '飞书 open_id（UPSERT 键）';
+COMMENT ON COLUMN users.union_id IS '飞书 union_id';
+COMMENT ON COLUMN users.feishu_user_id IS '飞书 user_id';
+COMMENT ON COLUMN users.name IS '姓名';
+COMMENT ON COLUMN users.avatar_url IS '头像 URL';
+COMMENT ON COLUMN users.email IS '邮箱';
+COMMENT ON COLUMN users.mobile IS '手机号';
+COMMENT ON COLUMN users.source IS '账号来源（feishu）';
+COMMENT ON COLUMN users.is_active IS '是否允许登录（封禁置 false）';
+COMMENT ON COLUMN users.is_admin IS '是否管理员（默认 false，需手工置位）';
+COMMENT ON COLUMN users.first_login_at IS '首次登录时间';
+COMMENT ON COLUMN users.last_login_at IS '最近登录时间';
+COMMENT ON COLUMN users.login_count IS '累计登录次数';
+COMMENT ON COLUMN users.created_at IS '建号时间';
+COMMENT ON COLUMN users.updated_at IS '最近更新时间'"""
 
 
 def _ensure(cur):

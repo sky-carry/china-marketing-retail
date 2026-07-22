@@ -37,6 +37,7 @@ class TableManager:
     # ---- 内部 ----
     def _ensure_id(self, cur):
         cur.execute(f'ALTER TABLE {self.table} ADD COLUMN IF NOT EXISTS id bigserial')
+        cur.execute(f"COMMENT ON COLUMN {self.table}.id IS '自增行ID（数据管理在线编辑用，非业务字段）'")
 
     def _touch(self, cur):
         cur.execute('CREATE TABLE IF NOT EXISTS data_meta (loaded_at timestamptz NOT NULL)')
@@ -194,10 +195,12 @@ _MAPPING = TableManager(
         ('eleme_name', '饿了么名称', 'text'), ('eleme_id', '饿了么ID', 'text'),
         ('eleme_business_status', '饿了么营业状态', 'text'),
         ('jd_enable_status', '京东启用状态', 'float'), ('verification_status', '验真状态', 'float'),
+        ('store_address', '门店地址', 'text'),
     ],
     display=[('customer_name', 1), ('store_name', 1), ('province', 0), ('city', 0),
              ('internal_code', 0), ('remark', 0), ('jd_name', 1), ('jd_id', 0),
-             ('meituan_name', 1), ('meituan_id', 0), ('eleme_name', 1), ('eleme_id', 0)],
+             ('meituan_name', 1), ('meituan_id', 0), ('eleme_name', 1), ('eleme_id', 0),
+             ('store_address', 0)],
     required='store_name',
     key_fields=('store_name', 'customer_name', 'jd_id', 'meituan_id', 'eleme_id'))
 

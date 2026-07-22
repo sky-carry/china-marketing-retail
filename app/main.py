@@ -23,7 +23,7 @@ import secrets
 
 from . import auth, feishu
 from .config import settings, TEMPLATE_DIR
-from .services import recon, excel, etl_runner, tables, users
+from .services import recon, excel, etl_runner, tables, users, mapdata
 
 MAX_UPLOAD = 100 * 1024 * 1024   # 单文件上限 100MB
 
@@ -214,6 +214,28 @@ async def api_data(request: Request):
         return Response(status_code=304, headers={'ETag': etag})
     return Response(body, media_type='application/json; charset=utf-8',
                     headers={'ETag': etag, 'Cache-Control': 'no-cache'})
+
+
+@app.get('/api/map')
+async def api_map(request: Request):
+    """门店地图点位数据（v_map_points），缓存与 /api/data 同模式。"""
+    if not auth.is_authed(request):
+        return Response('{"error":"unauthorized"}', status_code=401,
+                        media_type='application/json')
+    etag, body = await asyncio.to_thread(mapdata.get_data)
+    if _not_modified(request, etag):
+        return Response(status_code=304, headers={'ETag': etag})
+    return Response(body, media_type='application/json; charset=utf-8',
+                    headers={'ETag': etag, 'Cache-Control': 'no-cache'})
+
+
+@app.get('/api/map/config')
+async def api_map_config(request: Request):
+    """前端高德 JS API 的 key 配置。GAODE_JS_KEY 未配置时回落到 GAODE_KEY。"""
+    if not auth.is_authed(request):
+        return JSONResponse({'error': 'unauthorized'}, status_code=401)
+    return {'jsKey': os.environ.get('GAODE_JS_KEY', '') or os.environ.get('GAODE_KEY', ''),
+            'jsSecret': os.environ.get('GAODE_JS_SECRET', '')}
 
 
 _EXPORT_NAMES = {'recon': '客户门店核对', 'guard': '网点保障'}

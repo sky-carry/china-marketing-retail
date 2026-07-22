@@ -1,0 +1,47 @@
+# SKG 库存核对平台部署编排：db（PostgreSQL 18）+ app（FastAPI/uvicorn）
+# 与同机其它项目统一为 docker compose。数据卷复用已有的 skg-inventory-pgdata（external），
+# 迁移不丢数据。app 用 bind mount 挂载代码，改文件即生效（.html 直接生效，.py 需 restart app）。
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-inventory_check}
+      # postgres:18 数据落到版本子目录；须与已有卷内路径一致，否则会当空库重新初始化
+      PGDATA: /var/lib/postgresql/18/docker
+    volumes:
+      - pgdata:/var/lib/postgresql
+    # 仅本机可访问；保留 5439 便于宿主机手工运维（psql / 手动 ETL）
+    ports:
+      - "127.0.0.1:5439:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-inventory_check}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATABASE: ${POSTGRES_DB:-inventory_check}
+    volumes:
+      # 代码挂载：宿主机改文件即生效（.html 每请求读盘；.py 改后 docker compose restart app）
+      - .:/app
+    ports:
+      - "8061:8061"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  # 复用现有独立容器 skg-inventory-db 的数据卷，迁移零丢失
+  pgdata:
+    external: true
+    name: skg-inventory-pgdata

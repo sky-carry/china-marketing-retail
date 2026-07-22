@@ -46,8 +46,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8061          # 启动服务
 ## 线上部署（已就绪）
 
 - 服务器地址、账号等敏感信息见 `docs/部署信息.local.md`（不入 git），下文以 `<服务器IP>` 占位
-- 服务器组件：systemd 服务 `skg-dashboard`（uvicorn）+ Docker 容器 `skg-inventory-db`（PostgreSQL 18，仅 127.0.0.1:5439）
-- 项目目录：`/home/code/china-marketing-retail/`
+- 服务器组件：**docker compose** —— `china-marketing-retail-app-1`（uvicorn :8061）+ `china-marketing-retail-db-1`（PostgreSQL 18，仅 127.0.0.1:5439）。无 nginx，8061 直接对外
+- 项目目录：`/home/code/china-marketing-retail/`（compose 把整目录 bind-mount 到容器 `/app`，改代码即生效）
+- 数据卷：external named volume `skg-inventory-pgdata`（沿用旧独立容器的卷）
 
 ### 日常数据更新（推荐：看板页面直接上传）
 
@@ -63,7 +64,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8061          # 启动服务
 
 ```powershell
 scp "excel\京东门店.xls" root@<服务器IP>:/home/code/china-marketing-retail/excel/
-ssh root@<服务器IP> "cd /home/code/china-marketing-retail && PGPORT=5439 python3 etl/load_excel.py --only jd_store,feishu"
+# 在 app 容器内跑 ETL（自动连 compose 网络里的 db）
+ssh root@<服务器IP> "cd /home/code/china-marketing-retail && docker compose exec app python3 etl/load_excel.py --only jd_store,feishu"
 ```
 
 `--only` 可选：bojun / jd_inventory / jd_store / meituan_store / meituan_inventory / feishu，不带则全量。
@@ -71,16 +73,20 @@ ssh root@<服务器IP> "cd /home/code/china-marketing-retail && PGPORT=5439 pyth
 ### 线上发版（代码/页面有改动时）
 
 ```powershell
-scp -r app etl sql requirements.txt root@<服务器IP>:/home/code/china-marketing-retail/
-ssh root@<服务器IP> "systemctl restart skg-dashboard"
+# 代码走 bind mount：上传即生效。.py 改动需重启容器，.html/模板无需重启
+scp -r app etl sql root@<服务器IP>:/home/code/china-marketing-retail/
+ssh root@<服务器IP> "cd /home/code/china-marketing-retail && docker compose restart app"   # 仅 .py 改动需要
+# requirements.txt 改了才需重建镜像：
+# ssh root@<服务器IP> "cd /home/code/china-marketing-retail && docker compose up -d --build app"
 ```
 
-服务器运维命令：
+服务器运维命令（在 `/home/code/china-marketing-retail/` 下）：
 
 ```bash
-systemctl status|restart skg-dashboard      # 服务
-journalctl -u skg-dashboard -n 50           # 日志
-docker ps | grep skg-inventory-db           # 数据库容器
+docker compose ps                 # 两容器状态
+docker compose restart app        # 重启应用（.py 改动后）
+docker compose logs -f app        # 应用日志
+docker compose down / up -d       # 停 / 起整栈（down 不会删 external 数据卷）
 ```
 
 ## Roadmap

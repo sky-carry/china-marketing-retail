@@ -147,6 +147,7 @@ CREATE TABLE "feishu_store_mapping" (
   "eleme_business_status" text,
   "jd_enable_status" double precision,
   "verification_status" double precision,
+  "store_address" text,
   "id" bigint
 );
 COMMENT ON TABLE "feishu_store_mapping" IS '即时零售门店上翻明细-专卖店（飞书文档主表：三平台门店映射）';
@@ -168,6 +169,8 @@ COMMENT ON COLUMN "feishu_store_mapping"."eleme_id" IS '饿了么ID';
 COMMENT ON COLUMN "feishu_store_mapping"."eleme_business_status" IS '饿了么营业状态';
 COMMENT ON COLUMN "feishu_store_mapping"."jd_enable_status" IS '京东启用状态';
 COMMENT ON COLUMN "feishu_store_mapping"."verification_status" IS '验真状态';
+COMMENT ON COLUMN "feishu_store_mapping"."store_address" IS '门店地址（来自 专卖店详细信息.xlsx，按店仓名称匹配）';
+COMMENT ON COLUMN "feishu_store_mapping"."id" IS '自增行ID（数据管理在线编辑用，非业务字段）';
 
 CREATE TABLE "jd_store" (
   "store_code" text,

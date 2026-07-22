@@ -87,7 +87,7 @@ RENAME = {
   '门店名称':'store_name','内部编码':'internal_code','备注':'remark','京东名称':'jd_name','京东ID':'jd_id',
   '京东营业状态':'jd_business_status','美团名称':'meituan_name','美团ID':'meituan_id','美团营业状态':'meituan_business_status',
   '饿了么名称':'eleme_name','饿了么ID':'eleme_id','饿了么营业状态':'eleme_business_status',
-  '京东启用状态':'jd_enable_status','验真状态':'verification_status'},
+  '京东启用状态':'jd_enable_status','验真状态':'verification_status','门店地址':'store_address'},
  'feishu_jd_outlet': {'门店编号':'store_code','门店名称':'store_name','视频状态':'video_status','门店性质':'store_type',
   '备注':'remark','经销商':'dealer','商家门店编号':'merchant_store_code','小时购门店编号':'hourly_store_code',
   '所在城市':'city','批次':'batch','行政区':'district','门店地址':'store_address','营业状态':'business_status',
@@ -138,6 +138,40 @@ def load_meituan_inventory():
     return [('meituan_store_inventory', '美团门店库存（Excel 上传 / 商品明细）', df)]
 
 
+def store_address_map():
+    """专卖店详细信息.xlsx（download）: 店仓名称 → 地址。文件缺失/缺列只警告不中断。"""
+    try:
+        p = src('专卖店详细信息.xlsx')
+    except FileNotFoundError:
+        print('警告: 未找到 专卖店详细信息.xlsx，feishu_store_mapping.store_address 将为空')
+        return {}
+    d = pd.read_excel(p, dtype=str)
+    if '店仓名称' not in d.columns or '地址' not in d.columns:
+        print('警告: 专卖店详细信息.xlsx 缺少「店仓名称」或「地址」列，store_address 将为空')
+        return {}
+    m = {}
+    for name, addr in zip(d['店仓名称'], d['地址']):
+        name = name.strip() if isinstance(name, str) else ''
+        addr = addr.strip() if isinstance(addr, str) else ''
+        if name and addr and name not in m:   # 重名店仓取第一条非空地址
+            m[name] = addr
+    return m
+
+
+def merge_store_address(df, report=True):
+    """按门店名称给飞书专卖店表补「门店地址」列，返回缺失地址的门店名列表。"""
+    addr = store_address_map()
+    names = df['门店名称'].map(lambda v: v.strip() if isinstance(v, str) else None)
+    df['门店地址'] = names.map(addr).astype(object)   # 全空时保持 text 而非 float
+    missing = sorted({n for n in names.dropna() if n and n not in addr}) if addr else []
+    if report and addr:
+        hit = int(df['门店地址'].notna().sum())
+        print(f'专卖店地址匹配: {hit} 家命中 / {len(missing)} 家缺失（详细信息表共 {len(addr)} 条地址）')
+        for n in missing:
+            print(f'  地址缺失: {n}')
+    return missing
+
+
 def load_feishu():
     feishu = src('_feishu_即时零售门店上翻明细.xlsx')
     out = []
@@ -150,6 +184,7 @@ def load_feishu():
         if c == '饿了么ID': plat = '饿了么'
         new_cols.append(f'{plat}营业状态' if c.startswith('营业状态') and plat else c)
     df.columns = new_cols
+    merge_store_address(df)   # B列店仓名称↔门店名称，AB列地址 → store_address
     out.append(('feishu_store_mapping', '即时零售门店上翻明细-专卖店（飞书文档主表：三平台门店映射）', df))
     out.append(('feishu_jd_outlet', '即时零售门店上翻明细-京东网点（飞书文档附表）',
                 pd.read_excel(feishu, sheet_name='京东网点')))
@@ -307,12 +342,14 @@ def main():
 
     # 记录数据装载时间 + 重建视图（DROP TABLE CASCADE 会把依赖视图一并删掉）
     cur.execute("CREATE TABLE IF NOT EXISTS data_meta (loaded_at timestamptz NOT NULL)")
+    cur.execute("COMMENT ON TABLE data_meta IS '数据装载元信息（仅一行）'")
+    cur.execute("COMMENT ON COLUMN data_meta.loaded_at IS '最近一次数据入库时间（导出文件名的时间戳取此值）'")
     cur.execute("DELETE FROM data_meta")
     cur.execute("INSERT INTO data_meta VALUES (now())")
-    views_sql = os.path.join(BASE, 'sql', '02_核对视图.sql')
-    cur.execute(open(views_sql, encoding='utf-8').read())
+    for vf in ('02_核对视图.sql', '03_地图视图.sql'):
+        cur.execute(open(os.path.join(BASE, 'sql', vf), encoding='utf-8').read())
+        print(f'视图已重建 (sql/{vf})')
     conn.commit()
-    print('核对视图已重建 (sql/02_核对视图.sql)')
     cur.close(); conn.close()
     print('ALL DONE')
 
